@@ -35,6 +35,10 @@ object Main extends IOApp {
         rescale.git.GitCmd.run(rest)
       case "proc" :: rest =>
         rescale.proc.ProcCmd.run(rest)
+      case "doctor" :: rest =>
+        rescale.doctor.DoctorCmd.run(rest)
+      case "runner" :: rest =>
+        rescale.runner.RunnerCmd.run(rest)
       case unknown :: _ =>
         IO.println(s"re-scale: unknown command '$unknown'")
           .flatMap(_ => IO.println(usage))
@@ -47,13 +51,15 @@ object Main extends IOApp {
        |Usage: re-scale <command> [args...]
        |
        |Commands:
-       |  hook        PreToolUse validator
+       |  hook        PreToolUse validator (per-project rules: .rescale/claude-hooks.yaml)
        |  db          Database queries (migration, issues, audit)
        |  enforce     Covenant verify, shortcuts scan, stale-stubs, skip-policy
        |  build       Compile / fmt / publish-local / kill-sbt
        |  test        Unit tests + cross-platform verify
        |  git         Git read / write + gh PR/issue/run/api
        |  proc        Process discovery + targeted termination
+       |  doctor      Project dev-env bootstrap (.rescale/doctor.yaml)
+       |  runner      Generic test-runner adapter (.rescale/runners.yaml)
        |  version     Print version
        |
        |Options:

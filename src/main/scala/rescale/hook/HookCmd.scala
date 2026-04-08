@@ -30,6 +30,7 @@
 package rescale.hook
 
 import cats.effect.{ExitCode, IO}
+import rescale.common.{Paths, Term}
 import rescale.hook.Rule.*
 
 object HookCmd {
@@ -41,9 +42,34 @@ object HookCmd {
       case _ =>
         for {
           stdin    <- readStdin
-          response  = process(stdin, DefaultRules.ruleSet)
+          rules    <- loadRules
+          response  = process(stdin, rules)
           _        <- IO.println(response)
         } yield ExitCode.Success
+    }
+  }
+
+  /** Load the rule set: defaults from `DefaultRules.ruleSet` plus any
+    * per-project overrides from `.rescale/claude-hooks.yaml`. The
+    * project-root lookup is best-effort — a hook running outside any
+    * recognized project root just gets the defaults.
+    *
+    * Parse errors print a warning to stderr and fall back to defaults
+    * so a malformed config never breaks the hook flow.
+    */
+  private val loadRules: IO[RuleSet] = IO.defer {
+    // Discover the project root from the current working directory.
+    // If no marker is found, fall back to defaults silently.
+    Paths.discover().flatMap {
+      case None       => IO.pure(DefaultRules.ruleSet)
+      case Some(root) =>
+        val cfg = Paths.claudeHooksConfig(root)
+        IO.blocking(RuleConfig.loadAndMerge(cfg)).map {
+          case Right(rs) => rs
+          case Left(err) =>
+            Term.warn(s"re-scale hook: ignoring $cfg ($err)")
+            DefaultRules.ruleSet
+        }
     }
   }
 

@@ -29,7 +29,6 @@ package rescale.common
 
 import cats.effect.{IO, Resource}
 import cats.effect.std.Mutex
-import cats.syntax.all.*
 import fs2.Stream
 import fs2.io.file.{Files, Path, CopyFlag, CopyFlags}
 
