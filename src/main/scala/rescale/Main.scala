@@ -11,6 +11,7 @@
 package rescale
 
 import cats.effect.{ExitCode, IO, IOApp}
+import rescale.hook.HookCmd
 
 object Main extends IOApp {
 
@@ -20,6 +21,8 @@ object Main extends IOApp {
         IO.println(usage).as(ExitCode.Success)
       case "--version" :: _ | "version" :: _ =>
         IO.println(s"re-scale ${Version.value}").as(ExitCode.Success)
+      case "hook" :: rest =>
+        HookCmd.run(rest)
       case unknown :: _ =>
         IO.println(s"re-scale: unknown command '$unknown'")
           .flatMap(_ => IO.println(usage))
