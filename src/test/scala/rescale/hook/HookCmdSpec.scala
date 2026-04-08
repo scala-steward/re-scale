@@ -86,6 +86,33 @@ final class HookCmdSpec extends FunSuite {
     assert(r.contains("\"permissionDecision\":\"ask\""), s"got: $r")
   }
 
+  test("process: giant multi-line commit message via heredoc is bounded-time") {
+    // Reproducer for the 48 GB incident observed on
+    //   re-scale git commit --m "$(cat <<'EOF' <5 KB of message> EOF)"
+    // Claude Code serializes the whole shell command (including the
+    // heredoc body) into `tool_input.command`. The hook then has to
+    // extract that string, parse it through BashParser, and match it
+    // against every DefaultRules entry.
+    //
+    // This test builds a realistic payload of the same shape and
+    // asserts the whole pipeline completes without exploding. munit's
+    // per-test timeout catches quadratic-or-worse regressions; a
+    // bounded-memory run finishes in milliseconds.
+    val body = (1 to 200)
+      .map(i => s"line $i: some commit message text with (parens) and :pseudo-classes")
+      .mkString("\\n")
+    val escapedCommand =
+      "re-scale git commit --m \\\"$(cat <<'EOF'\\n" + body + "\\nEOF\\n)\\\""
+    val json = s"""{"tool_name":"Bash","tool_input":{"command":"$escapedCommand","description":"commit"}}"""
+    val r = HookCmd.process(json, DefaultRules.ruleSet)
+    // The exact decision doesn't matter for this regression — what
+    // matters is that the parser + evaluator complete at all.
+    assert(
+      r.contains("\"hookSpecificOutput\""),
+      s"hook produced no wrapped response: $r"
+    )
+  }
+
   test("process: every response is wrapped in hookSpecificOutput") {
     val cases = List(
       """{"tool_name":"Bash","tool_input":{"command":"git status"}}""",

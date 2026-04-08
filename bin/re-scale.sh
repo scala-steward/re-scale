@@ -29,4 +29,36 @@
 export SCALANATIVE_MIN_HEAP_SIZE
 export SCALANATIVE_MAX_HEAP_SIZE
 
-exec "$(dirname "$0")/re-scale-bin" "$@"
+BIN="$(dirname "$0")/re-scale-bin"
+
+# Opt-in memory trace: when RESCALE_TRACE_MEMORY=1, wrap the binary
+# invocation under /usr/bin/time so every run emits peak RSS + wall
+# time on stderr. Used to narrow down runaway allocations without
+# instrumenting the binary itself. macOS uses -l, Linux uses -v.
+# Both formats are greppable and include `maximum resident set size`.
+if [ -n "${RESCALE_TRACE_MEMORY:-}" ] && [ -x /usr/bin/time ]; then
+  case "$(uname -s)" in
+    Darwin) /usr/bin/time -l "$BIN" "$@" ;;
+    Linux)  /usr/bin/time -v "$BIN" "$@" ;;
+    *)      "$BIN" "$@" ;;
+  esac
+else
+  "$BIN" "$@"
+fi
+rc=$?
+
+# On any non-zero exit — including SIGKILL (137), SIGTERM (143), and
+# proper error exits — echo the full invocation to stderr so a
+# post-mortem of the terminal scrollback identifies the exact
+# subcommand that failed. Essential when a hung process had to be
+# killed externally and you otherwise have no record of what ran.
+if [ "$rc" -ne 0 ]; then
+  printf 're-scale: exit=%s command=re-scale' "$rc" 1>&2
+  for a in "$@"; do
+    # quote each arg so multi-line commit messages reassemble correctly
+    printf ' %q' "$a" 1>&2
+  done
+  printf '\n' 1>&2
+fi
+
+exit $rc
