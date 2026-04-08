@@ -168,17 +168,46 @@ object Merge {
       .maxOption
       .getOrElse(0)
 
+    // -- Pass 1: dry-run the renumbering to build the rename map ----
+    //
+    // For Renumber and Stricter strategies we need a Map[oldId, newId]
+    // BEFORE we start emitting rows so the Pass-2 cross-reference
+    // rewriter can rewrite descriptions/notes/etc. that mention an
+    // old ID. PreferLeft drops colliding source rows entirely (no
+    // renumber); PreferRight overwrites target rows in place (also no
+    // renumber). Both leave the rename map empty, so Pass 2 is a
+    // no-op rewrite.
+    val renames = scala.collection.mutable.LinkedHashMap.empty[String, String]
+    if (strategy == Strategy.Renumber || strategy == Strategy.Stricter) {
+      var nextId = maxTakenId + 1
+      for (srcRow <- source.rows) {
+        val srcId = srcRow.getOrElse("id", "")
+        if (srcId.startsWith("ISS-") && targetIds.contains(srcId)) {
+          renames(srcId) = f"ISS-$nextId%03d"
+          nextId += 1
+        }
+      }
+    }
+    val renamesMap = renames.toMap
+
+    // -- Pass 2: apply the merge, rewriting cross-references --------
+    //
+    // Target rows are NOT rewritten — only source IDs get renumbered,
+    // so any reference inside a TARGET row's text column to "ISS-002"
+    // is to the TARGET's own ISS-002, which still exists at ISS-002.
+    // Only source rows can carry stale references after renumbering.
     val out = scala.collection.mutable.ListBuffer.empty[Map[String, String]]
     out ++= target.rows
-    var nextId = maxTakenId + 1
 
     for (srcRow <- source.rows) {
       val srcId = srcRow.getOrElse("id", "")
       if (srcId.isEmpty || !srcId.startsWith("ISS-")) {
-        out += srcRow
+        out += rewriteCrossRefs(srcRow, renamesMap)
       } else if (!targetIds.contains(srcId)) {
-        // No collision — keep the source row as-is.
-        out += srcRow
+        // No collision — keep at original ID, but still rewrite any
+        // cross-references in case this row mentions another source
+        // row that DID get renumbered.
+        out += rewriteCrossRefs(srcRow, renamesMap)
       } else {
         // Collision. Resolve per strategy.
         strategy match {
@@ -186,29 +215,90 @@ object Merge {
             // Drop the source row entirely.
             ()
           case Strategy.PreferRight =>
-            // Replace the target row with the source row.
+            // Replace the target row with the source row. Rewrite the
+            // source row's text columns first so it carries no stale
+            // references.
             val idx = out.indexWhere(_.getOrElse("id", "") == srcId)
-            if (idx >= 0) out.update(idx, srcRow)
-          case Strategy.Renumber =>
-            val newId = f"ISS-$nextId%03d"
-            nextId += 1
-            val oldDesc = srcRow.getOrElse("description", "")
-            val renumbered = srcRow ++ Map(
+            if (idx >= 0) out.update(idx, rewriteCrossRefs(srcRow, renamesMap))
+          case Strategy.Renumber | Strategy.Stricter =>
+            val newId    = renamesMap(srcId)
+            // Rewrite cross-refs in non-id text columns first…
+            val rewritten = rewriteCrossRefs(srcRow, renamesMap)
+            // …then build the [was $srcId] audit trail with the LITERAL
+            // old id, NOT from the rewritten text (rewriteCrossRefs
+            // would otherwise have turned `[was ISS-002]` into
+            // `[was ISS-026]` and lost the audit trail).
+            val oldDesc   = srcRow.getOrElse("description", "")
+            val rewrittenOldDesc =
+              if (renamesMap.isEmpty) oldDesc
+              else rewriteString(oldDesc, renamesMap)
+            val annotated = rewritten ++ Map(
               "id"          -> newId,
-              "description" -> s"[was $srcId] $oldDesc"
+              "description" -> s"[was $srcId] $rewrittenOldDesc"
             )
-            out += renumbered
-          case Strategy.Stricter =>
-            // For issues, "stricter" doesn't have an obvious meaning.
-            // Fall back to renumber.
-            val newId = f"ISS-$nextId%03d"
-            nextId += 1
-            out += (srcRow.updated("id", newId))
+            out += annotated
         }
       }
     }
 
     target.copy(rows = out.toList.sortBy(keyFn))
+  }
+
+  // -- Cross-reference rewriting --------------------------------------
+
+  /** Pattern that matches `ISS-NNN` IDs (3+ digits) anywhere in a
+    * string. Used by `rewriteString` to substitute old → new in a
+    * single pass.
+    */
+  private val IssueIdPattern: scala.util.matching.Regex = """ISS-\d{3,}""".r
+
+  /** Rewrite every ISS-NNN reference in `value` according to `renames`,
+    * in a SINGLE walk over the string.
+    *
+    * We can't use `Regex.replaceAllIn(text, m => fn(m))` here because
+    * it transitively requires `java.util.regex.Matcher.appendReplacement`
+    * + `appendTail`, neither of which is implemented in Scala Native's
+    * regex stdlib (yet). Instead we use `findAllMatchIn` (which IS
+    * supported) and manually splice the surviving + replacement chunks.
+    *
+    * The "single walk" property is important: a fold of `text.replace`
+    * over the renames map has a chain bug — if renames = {ISS-002 →
+    * ISS-026, ISS-026 → ISS-027}, the first replace turns ISS-002 →
+    * ISS-026, the second replace then turns that ISS-026 → ISS-027
+    * (wrong). The findAllMatchIn approach decides each match BEFORE
+    * the next is examined, so chains can't form.
+    */
+  private[db] def rewriteString(value: String, renames: Map[String, String]): String = {
+    if (renames.isEmpty) return value
+    val matches = IssueIdPattern.findAllMatchIn(value).toList
+    if (matches.isEmpty) return value
+    // We use String.substring + StringBuilder.append(String) instead of
+    // the Java-style `append(CharSequence, start, end)` overload because
+    // scala.collection.mutable.StringBuilder's `append(Any, Any, Any)`
+    // overload tuples the three args (you'd get the literal text
+    // "(value,cursor,start)" instead of the substring).
+    val sb = new StringBuilder
+    var cursor = 0
+    for (m <- matches) {
+      if (m.start > cursor) sb.append(value.substring(cursor, m.start))
+      sb.append(renames.getOrElse(m.matched, m.matched))
+      cursor = m.end
+    }
+    if (cursor < value.length) sb.append(value.substring(cursor))
+    sb.toString
+  }
+
+  /** Rewrite every text column in a row, leaving the `id` column
+    * untouched (the id column is set authoritatively by the merge
+    * loop, not via reference substitution).
+    */
+  private[db] def rewriteCrossRefs(row: Map[String, String], renames: Map[String, String]): Map[String, String] = {
+    if (renames.isEmpty) row
+    else
+      row.map {
+        case ("id", v) => "id" -> v
+        case (k, v)    => k -> rewriteString(v, renames)
+      }
   }
 
   /** Audit conflict resolver — picks the stricter status. */

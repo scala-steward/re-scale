@@ -10,7 +10,7 @@
  * generated files, intentionally-stub fixtures, etc. The TSV format
  * makes the policy auditable in git history.
  *
- * Schema (`scripts/data/skip-policy.tsv`):
+ * Schema (`.rescale/data/skip-policy.tsv`):
  *   path           — relative file path or directory glob (e.g. `ssg-md/foo.scala`
  *                    or `ssg-sass/generated/`)
  *   tool           — which enforcement tool the skip applies to

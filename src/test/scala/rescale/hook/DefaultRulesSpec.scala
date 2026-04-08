@@ -105,13 +105,55 @@ final class DefaultRulesSpec extends FunSuite {
     }
   }
 
-  test("cat / head / tail / less / more: deny → use Read") {
-    List("cat foo.txt", "head foo.txt", "tail foo.txt", "less foo.txt", "more foo.txt").foreach { c =>
+  test("cat foo.txt: ALLOW (cat is universally safe; secret-file rule covers the dangerous case)") {
+    // The earlier rule denied every cat / head / tail / less / more
+    // invocation. That was over-broad — `cat foo.txt` is the cleanest
+    // way to display a file's contents and the agent should be allowed
+    // to use it. The dangerous case (`cat secret.env`, `cat .pem`) is
+    // covered by the secret-file rule above.
+    assertEquals(decide("cat foo.txt"), Decision.Allow)
+    assertEquals(decide("head foo.txt"), Decision.Allow)
+    assertEquals(decide("tail foo.txt"), Decision.Allow)
+    assertEquals(decide("less foo.txt"), Decision.Allow)
+    assertEquals(decide("more foo.txt"), Decision.Allow)
+    // Bare cat (heredoc passthrough scenarios) is also fine.
+    assertEquals(decide("cat"), Decision.Allow)
+  }
+
+  test("cat secret.env: deny (secret-file rule wins)") {
+    decide("cat secret.env") match {
+      case Decision.Deny(r) => assert(r.contains("secret"), s"reason='$r'")
+      case other            => fail(s"expected Deny, got $other")
+    }
+  }
+
+  test("pipe to head/tail/wc/grep: deny → write to file + Read tool") {
+    // The anti-pattern is `command | filter` — push the agent toward
+    // intermediate files so they can re-inspect via Read.
+    val cases = List(
+      "find . | head",
+      "ls -la | head -20",
+      "cat foo.txt | tail",
+      "echo hello | wc -l",
+      "re-scale db audit list | grep open",
+      "git log | head"
+    )
+    cases.foreach { c =>
       decide(c) match {
-        case Decision.Deny(r) => assert(r.contains("Read"), s"$c → '$r'")
+        case Decision.Deny(r) => assert(r.contains("pipe") || r.contains("Read") || r.contains("Grep"),
+          s"$c → '$r'")
         case other => fail(s"$c → expected Deny, got $other")
       }
     }
+  }
+
+  test("standalone head/tail without pipe: allow") {
+    // A standalone `head -10 < file.txt` doesn't fit the pipe-to-filter
+    // anti-pattern. Allow it. The Read tool with offset/limit is still
+    // the better choice but we don't force it.
+    assertEquals(decide("head -10 foo.txt"), Decision.Allow)
+    assertEquals(decide("tail -f foo.log"), Decision.Allow)
+    assertEquals(decide("wc -l foo.txt"), Decision.Allow)
   }
 
   test("echo with > redirect: deny → use Write/Edit") {
@@ -134,8 +176,10 @@ final class DefaultRulesSpec extends FunSuite {
     }
   }
 
-  test("sort / wc / uniq / cut / tr / xargs: deny") {
-    List("sort", "wc -l", "uniq -c", "cut -f 1", "tr A B", "xargs ls").foreach { c =>
+  test("sort / uniq / cut / tr / xargs: deny") {
+    // wc was removed from this list — see "standalone head/tail without pipe: allow"
+    // and the pipe-to-filter rule.
+    List("sort", "uniq -c", "cut -f 1", "tr A B", "xargs ls").foreach { c =>
       decide(c) match {
         case Decision.Deny(_) => // ok
         case other => fail(s"$c → expected Deny, got $other")

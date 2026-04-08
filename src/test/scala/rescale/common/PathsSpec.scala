@@ -60,25 +60,33 @@ final class PathsSpec extends FunSuite {
     assertEquals(Paths.discoverFrom(root, markers = Nil), None)
   }
 
-  test("dataDir prefers .rescale/data over scripts/data") {
+  test("dataDir is .rescale/data under the project root") {
     val root = tempProject()
     val rescaleData = new File(root, ".rescale/data")
     rescaleData.mkdirs()
-    val scriptsData = new File(root, "scripts/data")
-    scriptsData.mkdirs()
     assertEquals(Paths.dataDir(root).getAbsolutePath, rescaleData.getAbsolutePath)
   }
 
-  test("dataDir falls back to scripts/data when .rescale missing") {
-    val root = tempProject()
-    val scriptsData = new File(root, "scripts/data")
-    scriptsData.mkdirs()
-    assertEquals(Paths.dataDir(root).getAbsolutePath, scriptsData.getAbsolutePath)
-  }
-
-  test("dataDir returns preferred path even if nothing exists") {
+  test("dataDir returns the canonical path even if it doesn't exist yet") {
     val root = tempProject()
     val d = Paths.dataDir(root)
     assert(d.getAbsolutePath.endsWith(".rescale/data"))
+  }
+
+  test("dataDir does NOT honor the legacy scripts/data location") {
+    // The legacy ssg-dev convention was scripts/data/. re-scale used
+    // to fall back to it when .rescale/data was absent, but that
+    // caused split-state bugs (users editing scripts/data/issues.tsv
+    // while re-scale read .rescale/data/issues.tsv). The fallback is
+    // gone — there is exactly ONE location.
+    val root = tempProject()
+    val scriptsData = new File(root, "scripts/data")
+    scriptsData.mkdirs()
+    val d = Paths.dataDir(root)
+    assert(
+      d.getAbsolutePath.endsWith(".rescale/data"),
+      s"dataDir should ignore legacy scripts/data; got ${d.getAbsolutePath}"
+    )
+    assert(!d.getAbsolutePath.contains("scripts/data"))
   }
 }
