@@ -8,12 +8,24 @@
  * contract.
  *
  * Hook contract (PreToolUse):
- *   Input  (stdin):  { "tool_name": "Bash", "tool_input": { "command": "...", "description": "..." } }
- *   Output (stdout): { "permissionDecision": "allow|ask|deny", "permissionDecisionReason": "..." }
+ *   Input  (stdin):
+ *     { "tool_name": "Bash", "tool_input": { "command": "...", "description": "..." } }
  *
- * Non-Bash tools are passed through with no decision (the harness
- * defaults to allow). Empty / unparseable input is allowed (we don't
- * want to block on a malformed event).
+ *   Output (stdout) — wrapped in `hookSpecificOutput` per the Claude
+ *   Code spec:
+ *     {
+ *       "hookSpecificOutput": {
+ *         "hookEventName": "PreToolUse",
+ *         "permissionDecision": "allow|ask|deny",
+ *         "permissionDecisionReason": "..."
+ *       }
+ *     }
+ *
+ * Non-Bash tools are passed through as `allow`. Empty / unparseable
+ * input is also `allow` — we don't want to block on a malformed event.
+ *
+ * Parity-tested against the legacy ssg-dev hook output format so this
+ * is a drop-in replacement for `.claude/hooks/pre-tool-use.sh`.
  */
 package rescale.hook
 
@@ -43,10 +55,10 @@ object HookCmd {
     val command = extractBashCommand(input)
     command match {
       case None =>
-        // Not a Bash tool call, or input is malformed — pass through.
-        emptyResponse
+        // Not a Bash tool call, or input is malformed — let the harness allow.
+        responseJson("allow", "")
       case Some(cmd) if cmd.trim.isEmpty =>
-        emptyResponse
+        responseJson("allow", "")
       case Some(cmd) =>
         val expr     = BashParser.parse(cmd)
         val decision = RuleEvaluator.evaluate(expr, rules)
@@ -107,15 +119,17 @@ object HookCmd {
 
   /** Render a Decision as the Claude Code hook response JSON. */
   private[hook] def renderDecision(decision: Decision): String = decision match {
-    case Decision.Allow      => emptyResponse
+    case Decision.Allow      => responseJson("allow", "")
     case Decision.Pass(r)    => responseJson("allow", r)
     case Decision.Ask(r)     => responseJson("ask", r)
     case Decision.Deny(r)    => responseJson("deny", r)
   }
 
-  /** Empty response = let the harness use its default (allow). */
-  private val emptyResponse = "{}"
-
+  /** Build the wrapped Claude Code hook response. The wrapping under
+    * `hookSpecificOutput` with `hookEventName: PreToolUse` is the
+    * exact shape Claude Code expects from a PreToolUse hook — without
+    * it, the decision is silently ignored.
+    */
   private def responseJson(decision: String, reason: String): String = {
     val escapedReason = reason
       .replace("\\", "\\\\")
@@ -123,7 +137,7 @@ object HookCmd {
       .replace("\n", "\\n")
       .replace("\r", "\\r")
       .replace("\t", "\\t")
-    s"""{"permissionDecision":"$decision","permissionDecisionReason":"$escapedReason"}"""
+    s"""{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"$decision","permissionDecisionReason":"$escapedReason"}}"""
   }
 
   /** Read all of stdin into a String. Bounded by the harness — Claude
