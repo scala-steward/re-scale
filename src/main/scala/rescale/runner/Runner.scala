@@ -23,8 +23,61 @@ import cats.effect.IO
 import rescale.common.Proc
 
 import java.io.{File, PrintWriter}
+import scala.util.matching.Regex
+import scala.util.matching.Regex.Match
 
 object Runner {
+
+  /** Streaming sink that scans each subprocess line as it arrives,
+    * capturing the first success-regex match and keeping up to
+    * `maxFailure` **distinct** lines that match any failure pattern.
+    *
+    * Memory footprint: O(maxFailure line lengths). Once the failure
+    * buffer is full, later matching lines are dropped on the floor —
+    * the in-process footprint never grows with subprocess output
+    * length.
+    *
+    * Thread safety: stdout and stderr reader threads both land in
+    * [[onLine]]. The whole sink is synchronized to keep the first-
+    * match race and the dedup set consistent.
+    */
+  private final class OutcomeSink(
+    successRegex:    Option[Regex],
+    failurePatterns: List[String],
+    maxFailure:      Int
+  ) extends Proc.LineSink {
+    private var firstMatch: Option[Match]    = None
+    private val failures                     = new java.util.LinkedHashSet[String]()
+    private val failuresEnabled              = failurePatterns.nonEmpty && maxFailure > 0
+
+    def onOut(line: String): Unit = onLine(line)
+    def onErr(line: String): Unit = onLine(line)
+
+    private def onLine(line: String): Unit = this.synchronized {
+      if (firstMatch.isEmpty) {
+        successRegex.foreach { rx =>
+          val m = rx.findFirstMatchIn(line)
+          if (m.isDefined) firstMatch = m
+        }
+      }
+      if (
+        failuresEnabled &&
+        failures.size < maxFailure &&
+        failurePatterns.exists(p => line.contains(p))
+      ) {
+        failures.add(line): Unit // LinkedHashSet dedupes; add() is a no-op on duplicates
+      }
+    }
+
+    def snapshot(): (Option[Match], List[String]) = this.synchronized {
+      val list = {
+        val out = new java.util.ArrayList[String](failures)
+        import scala.jdk.CollectionConverters.*
+        out.asScala.toList
+      }
+      (firstMatch, list)
+    }
+  }
 
   /** Result of running a runner: success flag, captured numeric/text
     * values from the success-regex, and the trimmed failure tail when
@@ -44,17 +97,45 @@ object Runner {
     posArgs: List[String],
     projectRoot: File
   ): IO[Outcome] = {
+    val successRegex: Option[Regex] =
+      runner.output.flatMap(_.success).flatMap { pat =>
+        try Some(pat.regex.r)
+        catch { case _: Throwable => None }
+      }
+    val capture: Map[String, Int] =
+      runner.output.flatMap(_.success).map(_.capture).getOrElse(Map.empty)
+    val failurePatterns: List[String] =
+      runner.output.flatMap(_.failure).map(_.`keep-lines-matching`).getOrElse(Nil)
+    val maxFailure: Int =
+      runner.output.flatMap(_.failure).map(_.`max-lines`).getOrElse(0)
+
+    val sink = new OutcomeSink(successRegex, failurePatterns, maxFailure)
+
     for {
       _      <- writeModeFile(runner, mode, posArgs, projectRoot)
       cwdFile = runner.invoke.cwd
                   .map(p => new File(resolveCwd(p, projectRoot)))
                   .getOrElse(projectRoot)
-      result <- Proc.run(
+      exit   <- Proc.runStreamed(
                   runner.invoke.command,
                   runner.invoke.args.getOrElse(Nil),
-                  cwd = Some(cwdFile)
+                  cwd = Some(cwdFile),
+                  sink = sink
                 )
-    } yield parseOutcome(runner, result)
+      (firstMatch, failureLines) = sink.snapshot()
+      captures = firstMatch match {
+        case None    => Map.empty[String, String]
+        case Some(m) =>
+          capture.flatMap { case (name, group) =>
+            if (group <= m.groupCount) Some(name -> m.group(group)) else None
+          }
+      }
+    } yield Outcome(
+      ok           = exit == 0,
+      captures     = captures,
+      exitCode     = exit,
+      failureLines = if (exit == 0) Nil else failureLines
+    )
   }
 
   /** Write the mode file with the resolved mode key-value pairs.
@@ -114,44 +195,4 @@ object Runner {
     else new File(projectRoot, path).getAbsolutePath
   }
 
-  /** Build the Outcome record from the captured Proc.Result. */
-  private def parseOutcome(runner: RunnersConfig.Runner, result: Proc.Result): Outcome = {
-    val combined = result.stdout + "\n" + result.stderr
-
-    val captures: Map[String, String] = runner.output.flatMap(_.success) match {
-      case None => Map.empty
-      case Some(pattern) =>
-        try {
-          pattern.regex.r.findFirstMatchIn(combined) match {
-            case None    => Map.empty
-            case Some(m) =>
-              pattern.capture.flatMap { case (name, group) =>
-                if (group <= m.groupCount) Some(name -> m.group(group))
-                else None
-              }
-          }
-        } catch {
-          case _: Throwable => Map.empty
-        }
-    }
-
-    val failureLines: List[String] =
-      if (result.ok) Nil
-      else runner.output.flatMap(_.failure) match {
-        case None => Nil
-        case Some(spec) =>
-          val patterns = spec.`keep-lines-matching`
-          val keep = combined.linesIterator.toList.filter { line =>
-            patterns.exists(p => line.contains(p))
-          }
-          keep.distinct.take(spec.`max-lines`)
-      }
-
-    Outcome(
-      ok           = result.ok,
-      captures     = captures,
-      exitCode     = result.exitCode,
-      failureLines = failureLines
-    )
-  }
 }
