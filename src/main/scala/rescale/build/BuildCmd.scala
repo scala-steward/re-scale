@@ -101,13 +101,18 @@ object BuildCmd {
     if (!errorsOnly) {
       Proc.exec("sbt", List("--client", cmd), cwd = Some(root)).map(ExitCode.apply)
     } else {
-      Proc.run("sbt", List("--client", cmd), cwd = Some(root)).flatMap { result =>
-        IO {
-          (result.stderr.split("\n") ++ result.stdout.split("\n"))
-            .filter(_.contains("[error]"))
-            .foreach(println)
-        }.as(ExitCode(result.exitCode))
+      // Streaming `[error]` filter — print each matching line as it
+      // arrives. sbt compile can emit megabytes of log on a cold build;
+      // buffering the full transcript just to grep for `[error]`
+      // earned us one 48-GB incident already. Don't do it again.
+      val sink: Proc.LineSink = new Proc.LineSink {
+        def onOut(line: String): Unit =
+          if (line.contains("[error]")) println(line)
+        def onErr(line: String): Unit =
+          if (line.contains("[error]")) println(line)
       }
+      Proc.runStreamed("sbt", List("--client", cmd), cwd = Some(root), sink = sink)
+        .map(ExitCode(_))
     }
   }
 

@@ -13,12 +13,22 @@
  * blocking — there's no async sys-process API on Scala Native. The
  * blocking pool semantically isolates these from the compute pool.
  *
- * Two output modes:
- *   - `run`  captures stdout/stderr to Strings (for parse-the-output
- *            patterns like `git status --porcelain`)
- *   - `exec` inherits stdout/stderr to the parent terminal (for
- *            interactive commands like `sbt --client compile` where
- *            we want the user to see the live build output)
+ * Three output modes:
+ *   - `run`         captures stdout/stderr to Strings (for parse-the-output
+ *                   patterns like `git status --porcelain`). **Only safe
+ *                   for commands with bounded output** — if the subprocess
+ *                   can produce megabytes of text, use [[runStreamed]]
+ *                   instead, otherwise the `StringBuilder`s will grow
+ *                   unboundedly and eventually OOM the wrapper.
+ *   - `runStreamed` hands each stdout/stderr line to a [[LineSink]] as
+ *                   it arrives. The sink decides what (if anything) to
+ *                   retain. This is the correct primitive for runners
+ *                   that scan verbose test output (sass-spec, Jest,
+ *                   etc.) — it keeps the in-process footprint bounded
+ *                   by whatever the sink chooses to hold on to.
+ *   - `exec`        inherits stdout/stderr to the parent terminal (for
+ *                   interactive commands like `sbt --client compile`
+ *                   where we want the user to see the live build output)
  */
 package rescale.common
 
@@ -31,6 +41,16 @@ object Proc {
 
   final case class Result(exitCode: Int, stdout: String, stderr: String) {
     def ok: Boolean = exitCode == 0
+  }
+
+  /** Per-line sink for [[runStreamed]]. Callbacks fire on the
+    * sys.process reader threads; implementations that share state
+    * between stdout and stderr **must** synchronize that state
+    * themselves.
+    */
+  trait LineSink {
+    def onOut(line: String): Unit
+    def onErr(line: String): Unit
   }
 
   /** Resolve a bare command name against `$PATH`. Absolute paths and
@@ -72,6 +92,34 @@ object Proc {
             127
         }
       Result(exit, stdoutBuf.toString.stripTrailing, stderrBuf.toString.stripTrailing)
+    }
+
+  /** Run a subprocess, feeding each stdout/stderr line to `sink` as it
+    * arrives. Nothing is buffered inside Proc itself — the in-process
+    * footprint is whatever the sink chooses to retain.
+    *
+    * THIS is the primitive to use whenever the subprocess can produce
+    * more than a few KB of output. sass-spec, Jest, `sbt compile` on a
+    * large module, and similar verbose runners all fall in this
+    * category — using [[run]] on them retains the full transcript in
+    * memory and was the direct cause of the sass-spec 48 GB incident.
+    */
+  def runStreamed(
+    cmd:  String,
+    args: List[String]       = Nil,
+    cwd:  Option[File]       = None,
+    env:  Map[String, String] = Map.empty,
+    sink: LineSink
+  ): IO[Int] =
+    IO.blocking {
+      val cmdList = resolveCmd(cmd) :: args
+      val logger  = ProcessLogger(line => sink.onOut(line), line => sink.onErr(line))
+      try Process(cmdList, cwd, env.toSeq*).!(logger)
+      catch {
+        case e: java.io.IOException =>
+          sink.onErr(s"Failed to run: ${cmdList.mkString(" ")}: ${e.getMessage}")
+          127
+      }
     }
 
   /** Run a subprocess with stdout/stderr inherited from the parent
