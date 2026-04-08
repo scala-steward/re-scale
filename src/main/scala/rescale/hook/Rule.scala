@@ -101,6 +101,21 @@ object Rule {
       */
     case HasAnySuffix(suffixes: List[String])
 
+    /** Match if any program/arg/redirect CONTAINS one of the listed
+      * substrings. Used for secret-file detection (`/.env`,
+      * `credentials.`, etc.) where the path may have arbitrary prefix.
+      */
+    case HasAnyContains(substrs: List[String])
+
+    /** Match if any redirect target STARTS WITH one of the listed
+      * prefixes. Used for system-directory write protection
+      * (`/etc/`, `/usr/`, `/System/`, `/Library/`).
+      *
+      * Distinct from `HasAny` because we want to match against the
+      * REDIRECT TARGET specifically, not the program or args.
+      */
+    case HasRedirectTargetPrefix(prefixes: List[String])
+
     /** Match if all of the listed values appear in the command.
       */
     case HasAll(values: List[String])

@@ -288,6 +288,75 @@ final class DefaultRulesSpec extends FunSuite {
     ).foreach { c => assertEquals(decide(c), Decision.Allow, c) }
   }
 
+  // -- Phase 10 backports: safety rails from sge/main ssg ------------
+
+  test("redirect to /etc/: deny") {
+    decide("echo foo > /etc/passwd") match {
+      case Decision.Deny(r) => assert(r.contains("system directory"), s"reason='$r'")
+      case other            => fail(s"expected Deny, got $other")
+    }
+  }
+
+  test("redirect to /usr/local/: deny") {
+    decide("cat foo > /usr/local/bin/x") match {
+      case Decision.Deny(_) => // ok
+      case other            => fail(s"expected Deny, got $other")
+    }
+  }
+
+  test("redirect to /System/ and /Library/: deny") {
+    List("echo x > /System/foo", "echo x > /Library/Preferences/y").foreach { c =>
+      decide(c) match {
+        case Decision.Deny(_) => // ok
+        case other            => fail(s"$c → expected Deny, got $other")
+      }
+    }
+  }
+
+  test("secret-file access: cp creds.env: deny") {
+    decide("cp creds.env target.txt") match {
+      case Decision.Deny(r) => assert(r.contains("secret"), s"reason='$r'")
+      case other            => fail(s"expected Deny, got $other")
+    }
+  }
+
+  test("secret-file access: .pem and .key: deny") {
+    List("mv private.pem backup/", "ln -s server.key /tmp/x").foreach { c =>
+      decide(c) match {
+        case Decision.Deny(_) => // ok
+        case other            => fail(s"$c → expected Deny, got $other")
+      }
+    }
+  }
+
+  test("secret-file access: credentials. substring: deny") {
+    decide("mv aws.credentials.json /tmp/") match {
+      case Decision.Deny(_) => // ok
+      case other            => fail(s"expected Deny, got $other")
+    }
+  }
+
+  test("re-scale itself is exempt from secret-file rule") {
+    // re-scale manages skip-policy.tsv and may legitimately reference
+    // secret-like patterns in audit data.
+    assertEquals(decide("re-scale db audit list --file foo.env"), Decision.Allow)
+  }
+
+  test("git config write: deny") {
+    decide("git config user.email me@example.com") match {
+      case Decision.Deny(r) => assert(r.contains("git config"), s"reason='$r'")
+      case other            => fail(s"expected Deny, got $other")
+    }
+  }
+
+  test("git config --get: allow") {
+    assertEquals(decide("git config --get user.email"), Decision.Allow)
+  }
+
+  test("git config --list: allow") {
+    assertEquals(decide("git config --list"), Decision.Allow)
+  }
+
   // -- Composition smoke tests ---------------------------------------
 
   test("safe pipeline: allow") {
