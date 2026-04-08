@@ -68,17 +68,23 @@ object Paths {
         )
     }
 
-  /** Locate the data directory. Prefers `.rescale/data` (explicit opt-in)
-    * over `scripts/data` (legacy ssg-dev convention) over the project
-    * root itself (fallback for brand-new projects).
+  /** The canonical re-scale data directory: `.rescale/data` under the
+    * project root. Holds `migration.tsv`, `issues.tsv`, `audit.tsv`,
+    * and `skip-policy.tsv`.
+    *
+    * The `.rescale/` parent directory is also where the per-project
+    * config files live (`claude-hooks.yaml`, `doctor.yaml`,
+    * `runners.yaml`, `modules.txt`, `scan-targets.txt`), so keeping
+    * the data tables here means everything re-scale-managed is in
+    * one git-versioned, diff-able directory.
+    *
+    * The legacy `scripts/data/` location (inherited from ssg-dev) is
+    * intentionally not honored — the migration.txt-style fallback
+    * shipped briefly during the rewrite but caused split-state bugs
+    * where users edited `scripts/data/issues.tsv` while re-scale read
+    * `.rescale/data/issues.tsv`. Single source of truth wins.
     */
-  def dataDir(root: File): File = {
-    val explicit = new File(root, ".rescale/data")
-    if (explicit.isDirectory) return explicit
-    val legacy = new File(root, "scripts/data")
-    if (legacy.isDirectory) return legacy
-    explicit // return the preferred path even if it doesn't exist yet
-  }
+  def dataDir(root: File): File = new File(root, ".rescale/data")
 
   /** IO version of [[dataDir]]. */
   def dataDirIO: IO[File] = projectRoot.map(dataDir)

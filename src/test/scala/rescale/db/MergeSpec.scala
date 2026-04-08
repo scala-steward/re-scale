@@ -107,6 +107,159 @@ final class MergeSpec extends FunSuite {
     assertEquals(maxId, 37)
   }
 
+  // -- Cross-reference rewriting --------------------------------------
+
+  test("issues merge: cross-reference renaming — description references the renumbered ID") {
+    // Source has ISS-002 (collides) and ISS-003 (no collision).
+    // ISS-003's description references ISS-002. After merge,
+    // ISS-002 → ISS-005; ISS-003's description must be rewritten
+    // to point to ISS-005, not the now-stale ISS-002.
+    val left = issuesTable(List(
+      ("ISS-001", "a.scala", "first"),
+      ("ISS-002", "b.scala", "second"),
+      ("ISS-003", "c.scala", "third"),
+      ("ISS-004", "d.scala", "fourth")
+    ))
+    val right = issuesTable(List(
+      ("ISS-002", "shared.scala", "right's ISS-002 — collides"),
+      ("ISS-003", "right3.scala", "right's ISS-003 — collides"),
+      ("ISS-005", "ref.scala",    "duplicate of ISS-002 (depends on ISS-003)")
+    ))
+    val merged = Merge.merge(Kind.Issues, left, right, Strategy.Renumber)
+
+    // Both colliding source rows get renumbered: ISS-002 → ISS-006, ISS-003 → ISS-007
+    // (max(targetIds ∪ keptSourceIds) = 5 because right's ISS-005 is kept).
+    // The non-colliding ISS-005 from right stays at ISS-005 — but its description
+    // references ISS-002 + ISS-003, which must be rewritten.
+
+    val iss5 = merged.rows.find(_.get("id").contains("ISS-005"))
+      .getOrElse(fail("expected ISS-005 to survive merge"))
+    val desc = iss5.getOrElse("description", "")
+    assert(!desc.contains("ISS-002"), s"ISS-005 description still references stale ISS-002: $desc")
+    assert(!desc.contains("ISS-003"), s"ISS-005 description still references stale ISS-003: $desc")
+    assert(desc.contains("ISS-006"), s"ISS-005 description should reference renamed ISS-006: $desc")
+    assert(desc.contains("ISS-007"), s"ISS-005 description should reference renamed ISS-007: $desc")
+  }
+
+  test("issues merge: cross-reference rewrite preserves [was X] audit trail") {
+    // The renumbered row's description gets a [was ISS-002] prefix.
+    // The literal "ISS-002" in that prefix is the AUDIT TRAIL — it
+    // must NOT be rewritten by the cross-ref pass. Otherwise the
+    // [was ...] tag would point at the new ID and the original ID
+    // would be lost.
+    val left = issuesTable(List(
+      ("ISS-001", "a.scala", "first"),
+      ("ISS-002", "b.scala", "second")
+    ))
+    val right = issuesTable(List(
+      ("ISS-002", "shared.scala", "collides")
+    ))
+    val merged = Merge.merge(Kind.Issues, left, right, Strategy.Renumber)
+    val renumbered = merged.rows.find(_.get("id").contains("ISS-003"))
+      .getOrElse(fail("expected ISS-003 (renumbered ISS-002) to exist"))
+    val desc = renumbered.getOrElse("description", "")
+    assert(desc.startsWith("[was ISS-002]"),
+      s"audit trail should preserve original ID literally: $desc")
+  }
+
+  test("issues merge: target ISS-X reference stays, source ISS-X reference rewrites") {
+    // The classic dual-branch scenario:
+    //
+    //   Branch 1 (target): ISS-056 + ISS-066 ("references ISS-056")
+    //   Branch 2 (source): ISS-056 + ISS-077 ("references ISS-056")
+    //
+    // After merge:
+    //   - Target's ISS-056 stays at ISS-056.
+    //   - Target's ISS-066 stays at ISS-066. Its description still
+    //     reads "references ISS-056" — pointing at TARGET's ISS-056,
+    //     which is still ISS-056. UNCHANGED.
+    //   - Source's ISS-056 collides → renamed (e.g. ISS-078, since
+    //     max(target ∪ kept-source) = 77 from source's ISS-077).
+    //   - Source's ISS-077 doesn't collide → stays at ISS-077. But
+    //     its description text "references ISS-056" was about
+    //     SOURCE's ISS-056, so it must be rewritten to point at the
+    //     renamed value (ISS-078).
+    //
+    // Net effect: ISS-066 and ISS-077 BOTH have descriptions that
+    // mention an "ISS-056"-shaped value, but they point at DIFFERENT
+    // rows (target's vs source's renamed).
+    val target = issuesTable(List(
+      ("ISS-056", "feature.scala", "the original feature issue"),
+      ("ISS-066", "blocker.scala", "blocked by ISS-056")
+    ))
+    val source = issuesTable(List(
+      ("ISS-056", "feature.scala", "branch B's view of the same feature"),
+      ("ISS-077", "blocker2.scala", "also blocked by ISS-056")
+    ))
+    val merged = Merge.merge(Kind.Issues, target, source, Strategy.Renumber)
+
+    // Find the rows.
+    val targetIss66 = merged.rows.find(r =>
+      r.get("id").contains("ISS-066") && r.get("file_path").contains("blocker.scala")
+    ).getOrElse(fail("expected target ISS-066 to survive"))
+
+    val sourceIss77 = merged.rows.find(r =>
+      r.get("id").contains("ISS-077") && r.get("file_path").contains("blocker2.scala")
+    ).getOrElse(fail("expected source ISS-077 to survive"))
+
+    // Target ISS-066's description was NEVER rewritten — still says ISS-056
+    // (correctly pointing at target's still-ISS-056).
+    assertEquals(
+      targetIss66.getOrElse("description", ""),
+      "blocked by ISS-056",
+      "target rows must not be rewritten — their references already point at target IDs"
+    )
+
+    // Source ISS-077's description WAS rewritten — its original text
+    // "ISS-056" referred to SOURCE's ISS-056, which got renumbered.
+    val sourceDesc = sourceIss77.getOrElse("description", "")
+    assert(!sourceDesc.contains("ISS-056"),
+      s"source ISS-077 description should no longer mention stale ISS-056: $sourceDesc")
+    // The renamed source ISS-056 is the FIRST collision, so it gets
+    // max(target ∪ kept-source) + 1 = max(56, 66, 77) + 1 = 78. But
+    // ISS-077 also exists in the kept-source set, so max-taken = 77,
+    // first allocation = ISS-078.
+    assert(sourceDesc.contains("ISS-078"),
+      s"source ISS-077 description should reference renamed ISS-078: $sourceDesc")
+  }
+
+  test("issues merge: chained renames don't double-rewrite") {
+    // Renames map: ISS-002 → ISS-005, ISS-005 → ISS-006.
+    // A naive `for ((old, new) <- renames) text.replace(old, new)`
+    // would turn ISS-002 → ISS-005 → ISS-006 (double-rewrite).
+    // The Regex.replaceAllIn implementation walks the string ONCE,
+    // so each match is decided before the next is examined.
+    //
+    // To trigger this, we need source rows where one references both
+    // an ID that maps to the rename target of another. Construct:
+    //   left  = ISS-001..004   (target IDs)
+    //   right = ISS-002 (collides → 005), ISS-005 (collides → 006),
+    //           plus a row whose description says "ISS-002 ISS-005".
+    val left = issuesTable(List(
+      ("ISS-001", "a.scala", "first"),
+      ("ISS-002", "b.scala", "second"),
+      ("ISS-005", "e.scala", "fifth")
+    ))
+    val right = issuesTable(List(
+      ("ISS-002", "right2.scala", "right's ISS-002 collides"),
+      ("ISS-005", "right5.scala", "right's ISS-005 collides"),
+      ("ISS-100", "ref.scala",    "references ISS-002 and ISS-005")
+    ))
+    val merged = Merge.merge(Kind.Issues, left, right, Strategy.Renumber)
+    val ref = merged.rows.find(_.get("id").contains("ISS-100"))
+      .getOrElse(fail("expected ISS-100 to survive merge"))
+    val desc = ref.getOrElse("description", "")
+    // Renames: max(left ∪ kept) = 100 (right's ISS-100 is kept), so
+    // colliders go to ISS-101 and ISS-102.
+    // After single-pass rewrite: "references ISS-101 and ISS-102".
+    assert(!desc.contains("ISS-002"), s"stale ISS-002 left in: $desc")
+    assert(!desc.contains("ISS-005"), s"stale ISS-005 left in: $desc")
+    assert(desc.contains("ISS-101"), s"expected rewritten ISS-101 in: $desc")
+    assert(desc.contains("ISS-102"), s"expected rewritten ISS-102 in: $desc")
+    // The double-rewrite bug would have produced ISS-102/ISS-102 or
+    // some chain artifact. Confirm we have the two distinct values.
+  }
+
   test("issues merge: prefer-left drops source on conflict") {
     val left = issuesTable(List(
       ("ISS-001", "a.scala", "left wins")

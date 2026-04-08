@@ -133,6 +133,27 @@ object DefaultRules {
       // ============================================================
       // Suboptimal tools — redirect to dedicated Claude tools
       // ============================================================
+      //
+      // The pipe-to-filter rule MUST come first so that pipelines like
+      // `find . | head` get the more informative "write to file" message
+      // instead of the per-program rule's standalone message.
+      //
+      // Pipe-to-filter rule: deny when ANY command is followed in a
+      // pipeline by `head` / `tail` / `wc` / `grep` / `rg`. Filtering
+      // another program's output via these tools is the anti-pattern;
+      // the alternative is to write the upstream output to a file
+      // (`cmd > /tmp/out`) and then Read it (or use the Grep tool for
+      // filtering). This pushes the agent toward intermediate files
+      // that can be re-inspected, instead of one-shot pipelines that
+      // truncate output the agent will then have to re-run.
+      RuleEntry(
+        when   = C.FollowedBy(C.ProgramIn(List("head", "tail", "wc", "grep", "rg", "ripgrep"))),
+        action = Some(Decision.Deny(
+          "Don't pipe to head/tail/wc/grep — write the upstream output to a file " +
+          "(e.g. `cmd > /tmp/out`) and then read it with the Read tool, or use the " +
+          "Grep tool for filtering. Pipelines truncate output you may need to re-inspect."
+        ))
+      ),
       RuleEntry(
         when   = C.ProgramIn(List("grep", "rg", "ripgrep")),
         action = Some(Decision.Deny("Use the Grep tool instead of grep/rg"))
@@ -145,10 +166,12 @@ object DefaultRules {
         when   = C.ProgramIn(List("ls")),
         action = Some(Decision.Deny("Use the Glob tool instead of ls"))
       ),
-      RuleEntry(
-        when   = C.ProgramIn(List("cat", "head", "tail", "less", "more")),
-        action = Some(Decision.Deny("Use the Read tool instead of cat/head/tail/less/more"))
-      ),
+      // `cat` is universally safe — the dangerous case (`cat secret.env`,
+      // `cat /etc/passwd`, etc.) is already covered by the secret-file
+      // rule above + the system-directory redirect rule. Standalone
+      // `cat foo.txt`, `cat <<EOF` heredoc passthrough, `cat -` for
+      // stdin pipelines, `git commit -F -` patterns, etc. should all
+      // flow through. No rule needed here.
       RuleEntry(
         when = C.And(List(
           C.ProgramIn(List("echo")),
@@ -163,9 +186,12 @@ object DefaultRules {
         when   = C.ProgramIn(List("sed", "awk", "perl")),
         action = Some(Decision.Deny("Use the Edit tool instead of sed/awk/perl"))
       ),
+      // Note: `wc` was previously in this list but it's been moved to
+      // the pipe-to-filter rule above. Standalone `wc -l foo.txt` is
+      // fine; only `cmd | wc -l` is the anti-pattern.
       RuleEntry(
-        when   = C.ProgramIn(List("sort", "wc", "uniq", "cut", "tr", "xargs")),
-        action = Some(Decision.Deny("Use dedicated tools or re-scale flags instead of sort/wc/uniq/cut/tr/xargs"))
+        when   = C.ProgramIn(List("sort", "uniq", "cut", "tr", "xargs")),
+        action = Some(Decision.Deny("Use dedicated tools or re-scale flags instead of sort/uniq/cut/tr/xargs"))
       ),
       RuleEntry(
         when   = C.ProgramIn(List("python", "python3", "ruby", "node")),

@@ -108,6 +108,8 @@ object RuleEvaluator {
         values.forall(v => all.contains(v))
       case Condition.HasRedirect(op) =>
         cmd.redirects.exists(_.op == op)
+      case Condition.HasPositionalNonFlag =>
+        cmd.args.exists(a => a.nonEmpty && !a.startsWith("-"))
       case Condition.ProgramIn(programs) =>
         programs.contains(normalizeProgramName(cmd.program))
       case Condition.FollowedBy(next) =>

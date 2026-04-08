@@ -132,6 +132,14 @@ object Rule {
     /** Match against a redirect operator on the command (e.g. "2>&1"). */
     case HasRedirect(op: String)
 
+    /** Match if the command has at least one positional argument that
+      * does NOT start with `-` (i.e. a real file/path/value, not a
+      * flag). Used to distinguish "cat foo.txt" (file read — should be
+      * denied in favor of the Read tool) from bare `cat` or
+      * `cat <<EOF` (stdin passthrough — fine).
+      */
+    case HasPositionalNonFlag
+
     /** Match if the program (after path normalization) equals one of
       * the given values. Convenience for the very common
       * `program in {x, y, z}` case.

@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+# Cancel in-progress runs of the same branch when a new push lands.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────
+  # 1. Compile + unit-test the Scala Native build on macOS and Linux.
+  #    The native test interface compiles a fresh binary per test
+  #    suite, so this dominates total wall time. We share the
+  #    Coursier + sbt + Scala Native LLVM caches across runs.
+  # ────────────────────────────────────────────────────────────────────
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up sbt
+        uses: sbt/setup-sbt@v1
+
+      - name: Cache Coursier + sbt
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.sbt
+            ~/.cache/coursier
+            ~/Library/Caches/Coursier
+          key: ${{ runner.os }}-sbt-${{ hashFiles('**/build.sbt', '**/project/**') }}
+          restore-keys: |
+            ${{ runner.os }}-sbt-
+
+      - name: Install Scala Native build deps (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libstdc++-12-dev libgc-dev time
+
+      - name: Install Scala Native build deps (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          # macOS ships clang via Xcode CLT and BSD `time` at /usr/bin/time
+          # (which the memory-bound spec already uses). Nothing to install.
+          /usr/bin/time -l /bin/echo ok || true
+
+      - name: Compile
+        run: sbt compile
+
+      - name: Stage native binary
+        run: sbt stage
+
+      - name: Run unit tests
+        run: sbt test
+        env:
+          # Tighter heap for CI to surface allocation regressions earlier.
+          SCALANATIVE_MAX_HEAP_SIZE: '1G'
+
+  # ────────────────────────────────────────────────────────────────────
+  # 2. End-to-end smoke test of the staged binary. Verifies the wrapper
+  #    + binary pair work after `sbt stage` and that --version + --help
+  #    + a hook decision flow without crashing.
+  # ────────────────────────────────────────────────────────────────────
+  smoke:
+    name: smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: test
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up sbt
+        uses: sbt/setup-sbt@v1
+
+      - name: Cache Coursier + sbt
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.sbt
+            ~/.cache/coursier
+            ~/Library/Caches/Coursier
+          key: ${{ runner.os }}-sbt-${{ hashFiles('**/build.sbt', '**/project/**') }}
+
+      - name: Install Scala Native build deps (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libstdc++-12-dev libgc-dev time
+
+      - name: Build + stage
+        run: sbt stage
+
+      - name: Smoke test --version
+        run: |
+          ./target/stage/bin/re-scale --version
+          ./target/stage/bin/re-scale --help
+
+      - name: Smoke test hook (allow path)
+        run: |
+          OUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"git status"}}' | ./target/stage/bin/re-scale hook)
+          echo "Hook output: $OUT"
+          echo "$OUT" | grep -q '"permissionDecision":"allow"'
+
+      - name: Smoke test hook (deny path)
+        run: |
+          OUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/foo"}}' | ./target/stage/bin/re-scale hook)
+          echo "Hook output: $OUT"
+          echo "$OUT" | grep -q '"permissionDecision":"deny"'
