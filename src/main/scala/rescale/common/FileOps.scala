@@ -42,9 +42,25 @@ object FileOps {
       .readAll(path)
       .through(text.utf8.decode)
       .through(text.lines)
+      .through(dropTrailingEmpty)
       .zipWithIndex
       .map { case (line, idx) => ((idx + 1).toInt, line) }
   }
+
+  /** Drop the trailing empty string that `text.lines` emits when the
+    * input ends with a newline. Without this, `wc -l file` and
+    * `streamLines(file).count` disagree by one for the common case of
+    * files terminated by `\n`.
+    *
+    * Implementation: peek one element ahead via `zipWithNext`. Always
+    * emit when there is a next; emit the last element only if non-empty.
+    */
+  private def dropTrailingEmpty: fs2.Pipe[IO, String, String] = in =>
+    in.zipWithNext.flatMap {
+      case (line, Some(_))               => Stream.emit(line)
+      case (line, None) if line.nonEmpty => Stream.emit(line)
+      case _                             => Stream.empty
+    }
 
   /** Java-File compatibility wrapper. Most of our code still uses
     * `java.io.File`; this lets callers hand us one without knowing

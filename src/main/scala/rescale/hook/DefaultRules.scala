@@ -148,10 +148,7 @@ object DefaultRules {
       RuleEntry(
         when = C.And(List(
           C.ProgramIn(List("curl", "wget")),
-          C.Or(List(
-            C.HasAny(List(".jar")),
-            C.HasAny(List(".tar.gz", ".tgz", ".zip"))
-          ))
+          C.HasAnySuffix(List(".jar", ".tar.gz", ".tgz", ".zip"))
         )),
         action = Some(Decision.Ask("Downloading archives to grep through them bypasses MCP/build tools — confirm intent"))
       ),

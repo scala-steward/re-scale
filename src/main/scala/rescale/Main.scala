@@ -23,6 +23,8 @@ object Main extends IOApp {
         IO.println(s"re-scale ${Version.value}").as(ExitCode.Success)
       case "hook" :: rest =>
         HookCmd.run(rest)
+      case "db" :: rest =>
+        rescale.db.DbCmd.run(rest)
       case unknown :: _ =>
         IO.println(s"re-scale: unknown command '$unknown'")
           .flatMap(_ => IO.println(usage))

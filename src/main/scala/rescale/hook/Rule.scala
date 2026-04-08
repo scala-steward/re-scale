@@ -46,9 +46,9 @@ object Rule {
     */
   enum Decision {
     case Allow
-    case Pass(reason: String)  // default-allow with explanation surfaced to user
-    case Ask(reason: String)   // user confirmation required
-    case Deny(reason: String)  // hard fail; the tool call is blocked
+    case Pass(why: String)  // default-allow with explanation surfaced to user
+    case Ask(why: String)   // user confirmation required
+    case Deny(why: String)  // hard fail; the tool call is blocked
 
     def reason: String = this match {
       case Allow      => ""
@@ -91,9 +91,15 @@ object Rule {
     case StartsWith(prefix: List[String])
 
     /** Match if any of the listed values appears anywhere in the
-      * command (program, args, or redirect targets).
+      * command (program, args, or redirect targets) as an exact token.
       */
     case HasAny(values: List[String])
+
+    /** Match if any program/arg/redirect ENDS WITH one of the listed
+      * suffixes. Used for filename-extension rules like the JAR/archive
+      * grep evasion rule.
+      */
+    case HasAnySuffix(suffixes: List[String])
 
     /** Match if all of the listed values appear in the command.
       */

@@ -25,21 +25,19 @@ ThisBuild / scalacOptions ++= Seq(
   "-deprecation",
   "-feature",
   "-Werror",
-  "-Wunused:imports,privates,locals,patvars,nowarn",
-  "-Wimplausible-patterns",
-  "-no-indent",
-  "-rewrite"
+  "-Wunused:imports,privates,locals,nowarn",
+  "-no-indent"
 )
 
 // Dependency versions — pinned to the latest Scala Native-compatible
 // releases as of 2026-04. Bumping these requires re-running the full
 // memory-bound test suite.
-val catsEffectVersion = "3.5.7"
-val fs2Version        = "3.11.0"
+val catsEffectVersion = "3.7.0"
+val fs2Version        = "3.13.0"
 val scalaYamlVersion  = "0.3.0"
 val catsParseVersion  = "1.1.0"
-val munitVersion      = "1.0.3"
-val munitCeVersion    = "2.0.0"
+val munitVersion      = "1.2.4"
+val munitCeVersion    = "2.2.0"
 
 lazy val root = project
   .in(file("."))

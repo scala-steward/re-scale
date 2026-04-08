@@ -28,12 +28,15 @@
 package rescale.common
 
 import cats.effect.{IO, Resource}
+import cats.effect.std.Mutex
 import cats.syntax.all.*
 import fs2.Stream
 import fs2.io.file.{Files, Path, CopyFlag, CopyFlags}
 
 import java.io.{File, RandomAccessFile}
 import java.nio.channels.{FileChannel, FileLock}
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import scala.collection.mutable.ListBuffer
 
 object Tsv {
@@ -173,19 +176,61 @@ object Tsv {
     commentLines ++ headerLine ++ dataLines
   }
 
-  /** Atomic write: stream the Table's serialized form into a .tmp
-    * sibling file, then atomically rename into place. On filesystems
-    * that don't support `ATOMIC_MOVE`, falls back to plain replace.
+  /** Atomic write: stream the Table's serialized form into a UUID-
+    * suffixed sibling temp file, then atomically rename into place. On
+    * filesystems that don't support `ATOMIC_MOVE`, falls back to plain
+    * replace.
+    *
+    * The UUID suffix is a defense-in-depth against parallel writers
+    * that have somehow ended up here without going through `modify` —
+    * each gets a private temp file so no two writers can collide on
+    * the same name.
     */
-  def write(path: Path, table: Table): IO[Unit] = {
-    val tmp = Path(path.toString + ".tmp")
-    FileOps.writeLines(tmp, serialize(table)) *>
-      Files[IO]
-        .move(tmp, path, CopyFlags(CopyFlag.ReplaceExisting, CopyFlag.AtomicMove))
-        .handleErrorWith(_ => Files[IO].move(tmp, path, CopyFlags(CopyFlag.ReplaceExisting)))
-  }
+  // Monotonic counter for temp-file naming. Combined with nanoTime() it
+  // gives a per-write unique suffix without depending on SecureRandom
+  // (which Scala Native does not implement).
+  private val tempCounter = new AtomicLong(0L)
+
+  def write(path: Path, table: Table): IO[Unit] =
+    IO.delay {
+      val n = tempCounter.incrementAndGet()
+      val t = System.nanoTime()
+      s".tmp.$t.$n"
+    }.flatMap { suffix =>
+      val tmp = Path(path.toString + suffix)
+      FileOps.writeLines(tmp, serialize(table)) *>
+        Files[IO]
+          .move(tmp, path, CopyFlags(CopyFlag.ReplaceExisting, CopyFlag.AtomicMove))
+          .handleErrorWith(_ => Files[IO].move(tmp, path, CopyFlags(CopyFlag.ReplaceExisting)))
+    }
 
   def write(file: File, table: Table): IO[Unit] = write(Path.fromNioPath(file.toPath), table)
+
+  // -- In-process serialization ----------------------------------------------
+
+  /** Per-path mutex registry. Multiple `modify` calls on the same path
+    * within a single JVM serialize through a `Mutex[IO]` keyed by the
+    * absolute path. This is REQUIRED in addition to the OS file lock
+    * because Scala Native's `FileChannel.lock()` is process-level on
+    * many systems — within a single process, two `lock()` calls on the
+    * same file may both succeed immediately, leaving callers racing
+    * on the temp file and the move.
+    */
+  private val pathMutexes = new ConcurrentHashMap[String, Mutex[IO]]()
+
+  private def mutexFor(path: Path): IO[Mutex[IO]] = {
+    val key = path.absolute.toString
+    IO.delay(Option(pathMutexes.get(key))).flatMap {
+      case Some(m) => IO.pure(m)
+      case None    =>
+        Mutex[IO].flatMap { fresh =>
+          IO.delay {
+            val prior = pathMutexes.putIfAbsent(key, fresh)
+            if (prior eq null) fresh else prior
+          }
+        }
+    }
+  }
 
   // -- Cross-process locking -------------------------------------------------
 
@@ -221,15 +266,37 @@ object Tsv {
     * (commit `be18ed6`); that test migrates to `TsvSpec` in Phase 1.
     */
   def modify(path: Path)(fn: Table => Table): IO[Table] =
-    lockFile(path).use { _ =>
-      for {
-        exists  <- Files[IO].exists(path)
-        table   <- if (exists) read(path) else IO.pure(Table.empty)
-        updated  = fn(table)
-        _       <- write(path, updated)
-      } yield updated
+    modifyWith(path) { t =>
+      val updated = fn(t)
+      (updated, updated)
     }
 
   def modify(file: File)(fn: Table => Table): IO[Table] =
     modify(Path.fromNioPath(file.toPath))(fn)
+
+  /** Like [[modify]] but the callback returns both the updated table
+    * AND a derived value that gets threaded back through the IO chain.
+    *
+    * Use this when you need to compute something inside the locked
+    * critical section and surface it to the caller — e.g.
+    * IssuesDb.add allocates the next ISS-NNN id inside the lock and
+    * returns it so the user sees what was assigned, without using
+    * unsafe side channels.
+    */
+  def modifyWith[A](path: Path)(fn: Table => (Table, A)): IO[A] =
+    mutexFor(path).flatMap { mutex =>
+      mutex.lock.surround {
+        lockFile(path).use { _ =>
+          for {
+            exists <- Files[IO].exists(path)
+            table  <- if (exists) read(path) else IO.pure(Table.empty)
+            result  = fn(table)
+            _      <- write(path, result._1)
+          } yield result._2
+        }
+      }
+    }
+
+  def modifyWith[A](file: File)(fn: Table => (Table, A)): IO[A] =
+    modifyWith(Path.fromNioPath(file.toPath))(fn)
 }

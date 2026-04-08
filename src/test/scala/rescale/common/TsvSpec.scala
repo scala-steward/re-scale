@@ -14,7 +14,6 @@ package rescale.common
 
 import cats.effect.IO
 import cats.syntax.all.*
-import fs2.io.file.Path as FsPath
 import munit.CatsEffectSuite
 import rescale.common.Tsv.Table
 
