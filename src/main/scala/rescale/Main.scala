@@ -27,6 +27,14 @@ object Main extends IOApp {
         rescale.db.DbCmd.run(rest)
       case "enforce" :: rest =>
         rescale.enforce.EnforceCmd.run(rest)
+      case "build" :: rest =>
+        rescale.build.BuildCmd.run(rest)
+      case "test" :: rest =>
+        rescale.test.TestCmd.run(rest)
+      case "git" :: rest =>
+        rescale.git.GitCmd.run(rest)
+      case "proc" :: rest =>
+        rescale.proc.ProcCmd.run(rest)
       case unknown :: _ =>
         IO.println(s"re-scale: unknown command '$unknown'")
           .flatMap(_ => IO.println(usage))
@@ -38,16 +46,14 @@ object Main extends IOApp {
        |
        |Usage: re-scale <command> [args...]
        |
-       |Commands (planned — implemented phase-by-phase):
+       |Commands:
        |  hook        PreToolUse validator
        |  db          Database queries (migration, issues, audit)
        |  enforce     Covenant verify, shortcuts scan, stale-stubs, skip-policy
-       |  git         Git and GitHub operations (Phase 5)
-       |  build       Build commands (Phase 5)
-       |  quality     Quality scans (Phase 5)
-       |  test        Test orchestration (Phase 5)
-       |  compare     Source/Scala file comparison (Phase 5)
-       |  proc        Process management (Phase 5)
+       |  build       Compile / fmt / publish-local / kill-sbt
+       |  test        Unit tests + cross-platform verify
+       |  git         Git read / write + gh PR/issue/run/api
+       |  proc        Process discovery + targeted termination
        |  version     Print version
        |
        |Options:

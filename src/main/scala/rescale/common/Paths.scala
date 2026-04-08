@@ -92,6 +92,33 @@ object Paths {
   /** Config files (Phase 2 hook will read this). */
   def hookConfig(root: File): File = new File(root, ".claude-hook.yaml")
 
+  /** Heuristically discover module names inside a project. A "module"
+    * is an immediate subdirectory of the project root that contains
+    * `src/main/scala`. Used by `re-scale build` / `test verify` to
+    * iterate over every sub-project without hardcoding the SSG module
+    * list.
+    *
+    * Reads `.rescale/modules.txt` if present (one module name per
+    * line, `#` comments). Otherwise discovers from the directory tree.
+    */
+  def moduleNames(root: File): List[String] = {
+    val cfg = new File(root, ".rescale/modules.txt")
+    if (cfg.isFile) {
+      val src = scala.io.Source.fromFile(cfg)
+      try {
+        src.getLines().toList
+          .map(_.trim)
+          .filter(l => l.nonEmpty && !l.startsWith("#"))
+      } finally src.close()
+    } else {
+      val children = Option(root.listFiles()).getOrElse(Array.empty[File]).toList
+      children
+        .filter(c => c.isDirectory && new File(c, "src/main/scala").isDirectory)
+        .map(_.getName)
+        .sorted
+    }
+  }
+
   /** Heuristically discover scannable source roots inside a project.
     *
     * Strategy:
