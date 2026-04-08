@@ -45,24 +45,32 @@ final class HookCmdSpec extends FunSuite {
 
   // -- process ------------------------------------------------------
 
-  test("process: empty command → empty response (no decision)") {
-    assertEquals(HookCmd.process("""{"command":""}""", DefaultRules.ruleSet), "{}")
+  // All process responses are wrapped in `hookSpecificOutput` per the
+  // Claude Code PreToolUse contract — re-scale's earlier `{}` for allow
+  // was silently ignored by the harness.
+
+  test("process: empty command → wrapped allow") {
+    val r = HookCmd.process("""{"command":""}""", DefaultRules.ruleSet)
+    assert(r.contains("\"hookSpecificOutput\""), s"got: $r")
+    assert(r.contains("\"permissionDecision\":\"allow\""), s"got: $r")
   }
 
-  test("process: non-Bash event → empty response") {
-    assertEquals(HookCmd.process("""{"tool_name":"Read","tool_input":{"file_path":"x"}}""", DefaultRules.ruleSet), "{}")
+  test("process: non-Bash event → wrapped allow") {
+    val r = HookCmd.process("""{"tool_name":"Read","tool_input":{"file_path":"x"}}""", DefaultRules.ruleSet)
+    assert(r.contains("\"hookSpecificOutput\""), s"got: $r")
+    assert(r.contains("\"permissionDecision\":\"allow\""), s"got: $r")
   }
 
-  test("process: allowed command → empty response") {
+  test("process: ls denied (suboptimal-tool rule)") {
     val json = """{"tool_name":"Bash","tool_input":{"command":"ls /tmp"}}"""
-    // ls is denied (suboptimal tools), so should NOT be empty.
-    val r = HookCmd.process(json, DefaultRules.ruleSet)
-    assert(r.contains("\"deny\""), s"got: $r")
+    val r    = HookCmd.process(json, DefaultRules.ruleSet)
+    assert(r.contains("\"permissionDecision\":\"deny\""), s"got: $r")
   }
 
-  test("process: re-scale call → empty (allow)") {
+  test("process: re-scale call → allow") {
     val json = """{"tool_name":"Bash","tool_input":{"command":"re-scale db audit list"}}"""
-    assertEquals(HookCmd.process(json, DefaultRules.ruleSet), "{}")
+    val r    = HookCmd.process(json, DefaultRules.ruleSet)
+    assert(r.contains("\"permissionDecision\":\"allow\""), s"got: $r")
   }
 
   test("process: rm -rf → deny JSON") {
@@ -78,10 +86,26 @@ final class HookCmdSpec extends FunSuite {
     assert(r.contains("\"permissionDecision\":\"ask\""), s"got: $r")
   }
 
+  test("process: every response is wrapped in hookSpecificOutput") {
+    val cases = List(
+      """{"tool_name":"Bash","tool_input":{"command":"git status"}}""",
+      """{"tool_name":"Bash","tool_input":{"command":"rm -rf /tmp"}}""",
+      """{"tool_name":"Bash","tool_input":{"command":"gh pr create"}}""",
+      """{"tool_name":"Read","tool_input":{"file_path":"x"}}"""
+    )
+    cases.foreach { json =>
+      val r = HookCmd.process(json, DefaultRules.ruleSet)
+      assert(r.startsWith("""{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"""),
+        s"unwrapped output for $json: $r")
+    }
+  }
+
   // -- renderDecision -----------------------------------------------
 
-  test("renderDecision: Allow → empty") {
-    assertEquals(HookCmd.renderDecision(Decision.Allow), "{}")
+  test("renderDecision: Allow → wrapped allow with empty reason") {
+    val out = HookCmd.renderDecision(Decision.Allow)
+    assert(out.contains("\"permissionDecision\":\"allow\""), s"got: $out")
+    assert(out.contains("\"permissionDecisionReason\":\"\""), s"got: $out")
   }
 
   test("renderDecision: Deny escapes the reason") {
