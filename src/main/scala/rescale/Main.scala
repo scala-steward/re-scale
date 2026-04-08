@@ -25,6 +25,8 @@ object Main extends IOApp {
         HookCmd.run(rest)
       case "db" :: rest =>
         rescale.db.DbCmd.run(rest)
+      case "enforce" :: rest =>
+        rescale.enforce.EnforceCmd.run(rest)
       case unknown :: _ =>
         IO.println(s"re-scale: unknown command '$unknown'")
           .flatMap(_ => IO.println(usage))
@@ -37,9 +39,9 @@ object Main extends IOApp {
        |Usage: re-scale <command> [args...]
        |
        |Commands (planned — implemented phase-by-phase):
-       |  hook        PreToolUse validator (Phase 2)
-       |  db          Database queries (migration, issues, audit; Phase 3)
-       |  enforce     Covenant verify, shortcuts scan, stale-stubs, skip-policy (Phase 4)
+       |  hook        PreToolUse validator
+       |  db          Database queries (migration, issues, audit)
+       |  enforce     Covenant verify, shortcuts scan, stale-stubs, skip-policy
        |  git         Git and GitHub operations (Phase 5)
        |  build       Build commands (Phase 5)
        |  quality     Quality scans (Phase 5)
