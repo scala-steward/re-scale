@@ -98,6 +98,11 @@ object RuleEvaluator {
       case Condition.HasAnySuffix(suffixes) =>
         val all = (normalizeProgramName(cmd.program) :: cmd.args) ++ cmd.redirects.map(_.target)
         suffixes.exists(suffix => all.exists(_.endsWith(suffix)))
+      case Condition.HasAnyContains(substrs) =>
+        val all = (normalizeProgramName(cmd.program) :: cmd.args) ++ cmd.redirects.map(_.target)
+        substrs.exists(s => all.exists(_.contains(s)))
+      case Condition.HasRedirectTargetPrefix(prefixes) =>
+        cmd.redirects.exists(r => prefixes.exists(p => r.target.startsWith(p)))
       case Condition.HasAll(values) =>
         val all = (normalizeProgramName(cmd.program) :: cmd.args) ++ cmd.redirects.map(_.target)
         values.forall(v => all.contains(v))

@@ -101,6 +101,36 @@ object DefaultRules {
       ),
 
       // ============================================================
+      // System-directory write protection — every flavor's RuleEngine
+      // had this. Refuses redirects to /etc/, /usr/, /System/, or
+      // /Library/ regardless of which command is doing the writing.
+      // Catches `echo foo > /etc/bar`, `program > /usr/local/bin/x`,
+      // and similar accidental sudo-like writes.
+      // ============================================================
+      RuleEntry(
+        when   = C.HasRedirectTargetPrefix(List("/etc/", "/usr/", "/System/", "/Library/")),
+        action = Some(Decision.Deny("Refusing to write under a system directory (/etc, /usr, /System, /Library)"))
+      ),
+
+      // ============================================================
+      // Secret file protection — every flavor had this safety rail.
+      // Denies any command whose argv mentions a `.env`, `.pem`,
+      // `.key`, `credentials.*`, or generic `secret` substring. The
+      // re-scale binary itself is exempt (it manages skip-policy.tsv
+      // and similar files that may legitimately match).
+      // ============================================================
+      RuleEntry(
+        when = C.And(List(
+          C.Not(C.ProgramIn(List("re-scale", "ssg-dev", "sge-dev"))),
+          C.Or(List(
+            C.HasAnySuffix(List(".env", ".pem", ".key")),
+            C.HasAnyContains(List("/.env", "credentials.", "secret"))
+          ))
+        )),
+        action = Some(Decision.Deny("Potential secret-file access (.env / .pem / .key / credentials / secret)"))
+      ),
+
+      // ============================================================
       // Suboptimal tools — redirect to dedicated Claude tools
       // ============================================================
       RuleEntry(
@@ -174,7 +204,14 @@ object DefaultRules {
             C.StartsWith(List("git", "reflog")),
             C.StartsWith(List("git", "name-rev")),
             C.StartsWith(List("git", "merge-base")),
-            C.StartsWith(List("git", "grep"))
+            C.StartsWith(List("git", "grep")),
+            // git config read-only forms (--get/--list/--edit) are
+            // explicitly allowed here. The companion deny rule below
+            // catches every OTHER `git config` invocation as a write.
+            C.And(List(
+              C.StartsWith(List("git", "config")),
+              C.HasAny(List("--get", "--get-all", "--get-regexp", "--list", "-l", "-e", "--edit"))
+            ))
           ))
         )),
         action = Some(Decision.Allow)
@@ -211,6 +248,15 @@ object DefaultRules {
           C.HasAny(List("-d", "-D", "--delete", "-m", "-M", "--move"))
         )),
         action = Some(Decision.Deny("git branch delete/rename overwrites data"))
+      ),
+      // git config writes overwrite settings — only allow read-only forms.
+      // Backported from sge's RuleEngine.
+      RuleEntry(
+        when = C.And(List(
+          C.StartsWith(List("git", "config")),
+          C.Not(C.HasAny(List("--get", "--get-all", "--get-regexp", "--list", "-l", "-e", "--edit")))
+        )),
+        action = Some(Decision.Deny("git config overwrites settings — read with --get/--list only"))
       ),
       RuleEntry(
         when = C.And(List(
