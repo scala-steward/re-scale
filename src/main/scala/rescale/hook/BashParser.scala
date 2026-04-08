@@ -151,10 +151,43 @@ object BashParser {
             pos += 1
             while (pos < input.length && input(pos) != '"') {
               if (input(pos) == '\\' && pos + 1 < input.length) {
+                // Escaped character — skip the backslash, keep the next char
                 pos += 1
                 sb.append(input(pos))
-              } else sb.append(input(pos))
-              pos += 1
+                pos += 1
+              } else if (input(pos) == '$' && pos + 1 < input.length && input(pos + 1) == '(') {
+                // Command substitution inside double quotes: "$(...)".
+                // The inner content can contain its own quotes, parens,
+                // heredocs, etc. — we must balance parens to find the
+                // real closing ')' before resuming the outer " scan.
+                // Without this, a heredoc body containing a literal "
+                // (e.g. `"every simple"`) prematurely closes the outer
+                // double-quoted string, leaving the rest as raw tokens
+                // that the parser chews on forever — the 48 GB incident.
+                sb.append("$(")
+                pos += 2
+                var depth = 1
+                while (pos < input.length && depth > 0) {
+                  if (input(pos) == '(') depth += 1
+                  else if (input(pos) == ')') depth -= 1
+                  if (depth > 0) { sb.append(input(pos)); pos += 1 }
+                  else pos += 1
+                }
+                sb.append(')')
+              } else if (input(pos) == '`') {
+                // Backtick command substitution inside double quotes:
+                // "`...`". Skip to the matching closing backtick.
+                sb.append('`')
+                pos += 1
+                while (pos < input.length && input(pos) != '`') {
+                  sb.append(input(pos))
+                  pos += 1
+                }
+                if (pos < input.length) { sb.append('`'); pos += 1 }
+              } else {
+                sb.append(input(pos))
+                pos += 1
+              }
             }
             if (pos < input.length) pos += 1
           case '\\' if pos + 1 < input.length =>
