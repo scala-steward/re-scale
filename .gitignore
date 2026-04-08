@@ -1,0 +1,29 @@
+# sbt
+target/
+project/target/
+project/project/
+.bloop/
+.bsp/
+.metals/
+
+# IntelliJ / VS Code
+.idea/
+.vscode/
+*.iml
+
+# Scala Native build artifacts
+*.o
+*.dylib
+*.so
+
+# Staged binary outputs (produced by `sbt stage`)
+bin/re-scale
+bin/re-scale-bin
+!bin/re-scale.sh
+
+# macOS
+.DS_Store
+
+# Scratch
+/tmp/
+*.log
