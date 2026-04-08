@@ -234,7 +234,7 @@ object Merge {
     */
   private def readSourceUnlocked(source: File): Table = {
     import cats.effect.unsafe.IORuntime.global
-    Tsv.read(source).unsafeRunSync()(global)
+    Tsv.read(source).unsafeRunSync()(using global)
   }
 
   // -- name → kind inference -------------------------------------------

@@ -17,8 +17,8 @@
 
 import scala.scalanative.build.*
 
-ThisBuild / scalaVersion := "3.3.4"
-ThisBuild / organization := "dev.rescale"
+ThisBuild / scalaVersion := "3.8.3"
+ThisBuild / organization := "com.kubuszok"
 ThisBuild / version      := "0.1.0-SNAPSHOT"
 
 ThisBuild / scalacOptions ++= Seq(
@@ -34,10 +34,12 @@ ThisBuild / scalacOptions ++= Seq(
 // memory-bound test suite.
 val catsEffectVersion = "3.7.0"
 val fs2Version        = "3.13.0"
-val scalaYamlVersion  = "0.3.0"
 val catsParseVersion  = "1.1.0"
 val munitVersion      = "1.2.4"
 val munitCeVersion    = "2.2.0"
+// Kindlings — Hearth-macro-based YAML and JSON derivation. Brings in
+// org.virtuslab::scala-yaml transitively.
+val kindlingsVersion  = "0.1.0"
 
 lazy val root = project
   .in(file("."))
@@ -51,13 +53,14 @@ lazy val root = project
         .withLTO(LTO.none)          // LTO adds link time; not needed for a CLI
     },
     libraryDependencies ++= Seq(
-      "org.typelevel"  %%% "cats-effect"         % catsEffectVersion,
-      "co.fs2"         %%% "fs2-core"            % fs2Version,
-      "co.fs2"         %%% "fs2-io"              % fs2Version,
-      "org.virtuslab"  %%% "scala-yaml"          % scalaYamlVersion,
-      "org.typelevel"  %%% "cats-parse"          % catsParseVersion,
-      "org.scalameta"  %%% "munit"               % munitVersion   % Test,
-      "org.typelevel"  %%% "munit-cats-effect"   % munitCeVersion % Test
+      "org.typelevel"  %%% "cats-effect"               % catsEffectVersion,
+      "co.fs2"         %%% "fs2-core"                  % fs2Version,
+      "co.fs2"         %%% "fs2-io"                    % fs2Version,
+      "com.kubuszok"   %%% "kindlings-yaml-derivation" % kindlingsVersion,
+      "com.kubuszok"   %%% "kindlings-jsoniter-json"   % kindlingsVersion,
+      "org.typelevel"  %%% "cats-parse"                % catsParseVersion,
+      "org.scalameta"  %%% "munit"                     % munitVersion   % Test,
+      "org.typelevel"  %%% "munit-cats-effect"         % munitCeVersion % Test
     ),
     testFrameworks += new TestFramework("munit.Framework"),
     // `sbt stage` copies the linked binary + wrapper into target/stage/bin/

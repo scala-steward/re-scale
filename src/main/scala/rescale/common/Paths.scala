@@ -89,8 +89,16 @@ object Paths {
   def auditTsv(root: File): File     = new File(dataDir(root), "audit.tsv")
   def skipPolicyTsv(root: File): File = new File(dataDir(root), "skip-policy.tsv")
 
-  /** Config files (Phase 2 hook will read this). */
-  def hookConfig(root: File): File = new File(root, ".claude-hook.yaml")
+  /** Per-project hook overrides — merged in front of DefaultRules.
+    * Loaded by `re-scale hook` from `.rescale/claude-hooks.yaml`.
+    */
+  def claudeHooksConfig(root: File): File = new File(root, ".rescale/claude-hooks.yaml")
+
+  /** Per-project doctor steps — read by `re-scale doctor`. */
+  def doctorConfig(root: File): File = new File(root, ".rescale/doctor.yaml")
+
+  /** Per-project test runner adapters — read by `re-scale runner`. */
+  def runnersConfig(root: File): File = new File(root, ".rescale/runners.yaml")
 
   /** Heuristically discover module names inside a project. A "module"
     * is an immediate subdirectory of the project root that contains
