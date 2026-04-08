@@ -23,7 +23,7 @@
  */
 package rescale.hook
 
-import rescale.hook.BashParser.{BashExpr, Redirect}
+import rescale.hook.BashParser.BashExpr
 import rescale.hook.Rule.*
 
 object RuleEvaluator {
@@ -95,6 +95,9 @@ object RuleEvaluator {
       case Condition.HasAny(values) =>
         val all = (normalizeProgramName(cmd.program) :: cmd.args) ++ cmd.redirects.map(_.target)
         values.exists(v => all.contains(v))
+      case Condition.HasAnySuffix(suffixes) =>
+        val all = (normalizeProgramName(cmd.program) :: cmd.args) ++ cmd.redirects.map(_.target)
+        suffixes.exists(suffix => all.exists(_.endsWith(suffix)))
       case Condition.HasAll(values) =>
         val all = (normalizeProgramName(cmd.program) :: cmd.args) ++ cmd.redirects.map(_.target)
         values.forall(v => all.contains(v))

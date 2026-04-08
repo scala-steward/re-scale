@@ -17,7 +17,6 @@ package rescale.common
 
 import cats.effect.IO
 import fs2.Stream
-import fs2.io.file.Path as FsPath
 import munit.CatsEffectSuite
 
 import java.io.{File, PrintWriter}
@@ -43,9 +42,9 @@ final class FileOpsSpec extends CatsEffectSuite {
     val f   = writeFile(new File(tempDir(), "sample.txt"), "alpha\nbeta\ngamma\n")
     val got = FileOps.streamLines(f).compile.toList
     got.map { rows =>
-      // `text.lines` emits a trailing empty string when the file ends
-      // with a newline; that's the standard FS2 behavior.
-      assertEquals(rows.take(3), List((1, "alpha"), (2, "beta"), (3, "gamma")))
+      // `dropTrailingEmpty` strips the synthetic empty line that fs2's
+      // text.lines emits for trailing-newline files, so wc -l matches.
+      assertEquals(rows, List((1, "alpha"), (2, "beta"), (3, "gamma")))
     }
   }
 

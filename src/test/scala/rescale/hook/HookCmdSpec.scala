@@ -9,7 +9,7 @@
 package rescale.hook
 
 import munit.FunSuite
-import rescale.hook.Rule.{Decision, RuleSet}
+import rescale.hook.Rule.Decision
 
 final class HookCmdSpec extends FunSuite {
 
