@@ -91,4 +91,42 @@ object Paths {
 
   /** Config files (Phase 2 hook will read this). */
   def hookConfig(root: File): File = new File(root, ".claude-hook.yaml")
+
+  /** Heuristically discover scannable source roots inside a project.
+    *
+    * Strategy:
+    *   1. If `.rescale/scan-targets.txt` exists, read one path per line
+    *      (relative to root). Comment lines starting with `#` are skipped.
+    *   2. Otherwise, look for any directory that contains a `src/main/scala`
+    *      subtree, and return each match. This works for sbt module roots
+    *      like `ssg-md/`, `ssg-liquid/`, etc. without requiring config.
+    *   3. Fall back to `[root/src/main/scala]` if a single-module project.
+    *
+    * Returns absolute paths. Non-existent paths are dropped.
+    */
+  def scanTargets(root: File): List[File] = {
+    val cfg = new File(root, ".rescale/scan-targets.txt")
+    if (cfg.isFile) {
+      val src = scala.io.Source.fromFile(cfg)
+      try {
+        val lines = src.getLines().toList
+        lines
+          .map(_.trim)
+          .filter(l => l.nonEmpty && !l.startsWith("#"))
+          .map(p => new File(root, p))
+          .filter(_.exists())
+      } finally src.close()
+    } else {
+      val children = Option(root.listFiles()).getOrElse(Array.empty[File]).toList
+      val moduleRoots = children.filter { c =>
+        c.isDirectory && new File(c, "src/main/scala").isDirectory
+      }
+      val moduleSrcs = moduleRoots.map(m => new File(m, "src/main/scala"))
+      if (moduleSrcs.nonEmpty) moduleSrcs
+      else {
+        val single = new File(root, "src/main/scala")
+        if (single.isDirectory) List(single) else Nil
+      }
+    }
+  }
 }
