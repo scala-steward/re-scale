@@ -39,6 +39,8 @@ object Main extends IOApp {
         rescale.doctor.DoctorCmd.run(rest)
       case "runner" :: rest =>
         rescale.runner.RunnerCmd.run(rest)
+      case "metals" :: rest =>
+        rescale.metals.MetalsCmd.run(rest)
       case unknown :: _ =>
         IO.println(s"re-scale: unknown command '$unknown'")
           .flatMap(_ => IO.println(usage))
@@ -60,6 +62,7 @@ object Main extends IOApp {
        |  proc        Process discovery + targeted termination
        |  doctor      Project dev-env bootstrap (.rescale/doctor.yaml)
        |  runner      Generic test-runner adapter (.rescale/runners.yaml)
+       |  metals      Metals LSP server lifecycle (install/start/stop/status)
        |  version     Print version
        |
        |Options:

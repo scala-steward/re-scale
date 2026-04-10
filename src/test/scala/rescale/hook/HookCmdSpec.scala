@@ -113,6 +113,25 @@ final class HookCmdSpec extends FunSuite {
     )
   }
 
+  test("process: Read on .rescale/data/ path → deny") {
+    val json = """{"tool_name":"Read","tool_input":{"file_path":"/foo/bar/.rescale/data/audit.tsv"}}"""
+    val r = HookCmd.process(json, DefaultRules.ruleSet)
+    assert(r.contains("\"permissionDecision\":\"deny\""), s"expected deny, got: $r")
+    assert(r.contains("re-scale db"), s"expected db hint, got: $r")
+  }
+
+  test("process: Read on normal file → allow") {
+    val json = """{"tool_name":"Read","tool_input":{"file_path":"/foo/bar/src/Main.scala"}}"""
+    val r = HookCmd.process(json, DefaultRules.ruleSet)
+    assert(r.contains("\"permissionDecision\":\"allow\""), s"expected allow, got: $r")
+  }
+
+  test("process: Edit on .rescale/data/ path → deny") {
+    val json = """{"tool_name":"Edit","tool_input":{"file_path":"/foo/.rescale/data/issues.tsv","old_string":"a","new_string":"b"}}"""
+    val r = HookCmd.process(json, DefaultRules.ruleSet)
+    assert(r.contains("\"permissionDecision\":\"deny\""), s"expected deny, got: $r")
+  }
+
   test("process: every response is wrapped in hookSpecificOutput") {
     val cases = List(
       """{"tool_name":"Bash","tool_input":{"command":"git status"}}""",

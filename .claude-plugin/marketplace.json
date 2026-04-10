@@ -1,0 +1,26 @@
+{
+  "name": "kubuszok-re-scale",
+  "owner": {
+    "name": "kubuszok",
+    "email": "mateusz.kubuszok@gmail.com"
+  },
+  "metadata": {
+    "description": "Scala Native porting toolkit — enforcement gates, migration tracking, and conversion guides",
+    "pluginRoot": "./plugins"
+  },
+  "plugins": [
+    {
+      "name": "re-scale",
+      "source": "./plugins/re-scale",
+      "description": "re-scale enforcement skills — audit, verify, gap-fix, conversion guides, code style",
+      "version": "0.1.0",
+      "author": {
+        "name": "kubuszok"
+      },
+      "repository": "https://github.com/kubuszok/re-scale",
+      "license": "Apache-2.0",
+      "keywords": ["scala", "porting", "enforcement", "code-quality"],
+      "category": "developer-tools"
+    }
+  ]
+}
