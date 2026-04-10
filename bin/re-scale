@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────
+# re-scale wrapper — self-locating, auto-compiling, heap-capped
+#
+# This script:
+#   1. Finds the re-scale repo root relative to its own location
+#   2. Locates the compiled binary at .build/re-scale-bin
+#   3. If missing, triggers `sbt install` to build it
+#   4. Sets the Immix heap cap (SCALANATIVE_MAX_HEAP_SIZE=1G)
+#   5. Runs the binary, echoing the invocation on non-zero exit
+#
+# Add this script's directory to PATH:
+#   export PATH="/path/to/re-scale/bin:$PATH"
+#
+# The .build/ directory is NOT in bin/, so adding bin/ to PATH
+# does not expose the unwrapped binary.
+# ─────────────────────────────────────────────────────────────
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Locate the binary. Two layouts are supported:
+#   1. Repo layout: bin/re-scale + .build/re-scale-bin (development)
+#   2. Flat layout: re-scale + re-scale-bin side by side (installed copy)
+BINARY="$SCRIPT_DIR/re-scale-bin"
+if [ ! -f "$BINARY" ]; then
+  REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+  BINARY="$REPO_ROOT/.build/re-scale-bin"
+fi
+
+# Auto-compile on first run (repo layout only)
+if [ ! -f "$BINARY" ]; then
+  if [ -f "$REPO_ROOT/build.sbt" ]; then
+    echo "[re-scale] Binary not found — building..." >&2
+    if command -v sbt >/dev/null 2>&1; then
+      (cd "$REPO_ROOT" && sbt --client install) >&2
+    else
+      echo "[re-scale] ERROR: sbt not on PATH. Install sbt and retry." >&2
+      exit 1
+    fi
+  fi
+  if [ ! -f "$BINARY" ]; then
+    echo "[re-scale] ERROR: re-scale-bin not found. Run 'sbt install' in the re-scale repo." >&2
+    exit 1
+  fi
+fi
+
+# Heap cap — prevents runaway Immix allocation (the 48 GB incident)
+: "${SCALANATIVE_MIN_HEAP_SIZE:=16M}"
+: "${SCALANATIVE_MAX_HEAP_SIZE:=1G}"
+export SCALANATIVE_MIN_HEAP_SIZE SCALANATIVE_MAX_HEAP_SIZE
+
+# Opt-in memory trace
+if [ -n "${RESCALE_TRACE_MEMORY:-}" ] && [ -x /usr/bin/time ]; then
+  case "$(uname -s)" in
+    Darwin) /usr/bin/time -l "$BINARY" "$@" ;;
+    Linux)  /usr/bin/time -v "$BINARY" "$@" ;;
+    *)      "$BINARY" "$@" ;;
+  esac
+else
+  "$BINARY" "$@"
+fi
+rc=$?
+
+# Echo failing invocations for post-mortem
+if [ "$rc" -ne 0 ]; then
+  printf 're-scale: exit=%s command=re-scale' "$rc" >&2
+  for a in "$@"; do printf ' %q' "$a" >&2; done
+  printf '\n' >&2
+fi
+
+exit $rc

@@ -121,6 +121,16 @@ object Tsv {
 
   def read(file: File): IO[Table] = read(Path.fromNioPath(file.toPath))
 
+  /** Read a TSV file, returning an empty Table with the given headers
+    * if the file doesn't exist. Useful for custom DB tables that are
+    * created on first write.
+    */
+  def readOrEmpty(file: File, headers: List[String]): IO[Table] =
+    IO.blocking(file.exists()).flatMap {
+      case true  => read(file)
+      case false => IO.pure(Table(headers, Nil, Nil))
+    }
+
   /** CSV-aware tab splitter. Single-pass; never backtracks. Respects
     * `"..."` wrapping where a quoted cell may contain tabs, newlines,
     * or escaped quotes (`""`).

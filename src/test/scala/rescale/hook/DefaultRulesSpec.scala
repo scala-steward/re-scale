@@ -52,6 +52,22 @@ final class DefaultRulesSpec extends FunSuite {
     }
   }
 
+  // -- adb / fastboot -------------------------------------------------
+
+  test("adb: deny") {
+    decide("adb shell ls") match {
+      case Decision.Deny(r) => assert(r.contains("adb"), s"reason='$r'")
+      case other => fail(s"expected Deny, got $other")
+    }
+  }
+
+  test("fastboot: deny") {
+    decide("fastboot flash boot") match {
+      case Decision.Deny(_) => // ok
+      case other => fail(s"expected Deny, got $other")
+    }
+  }
+
   // -- Destructive: rm ------------------------------------------------
 
   test("rm without flags: deny") {

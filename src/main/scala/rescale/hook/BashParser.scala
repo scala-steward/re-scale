@@ -67,7 +67,7 @@ object BashParser {
       if (pos >= input.length) return Token.Eof
 
       input(pos) match {
-        case ';' =>
+        case ';' | '\n' =>
           pos += 1
           Token.Semi
         case '|' =>

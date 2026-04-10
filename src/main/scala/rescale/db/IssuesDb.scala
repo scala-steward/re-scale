@@ -26,6 +26,7 @@ object IssuesDb {
       case "list" :: rest    => list(Cli.parse(rest))
       case "add" :: rest     => add(Cli.parse(rest))
       case "resolve" :: rest => resolve(Cli.parse(rest))
+      case "reopen" :: rest  => reopen(Cli.parse(rest))
       case "stats" :: _      => stats()
       case other :: _ =>
         IO(Term.err(s"Unknown issues command: $other")).as(ExitCode.Error)
@@ -92,6 +93,24 @@ object IssuesDb {
                }
       result <- if (!found) IO(Term.err(s"Not found: $id")).as(ExitCode.Error)
                 else IO(Term.ok(s"Resolved: $id")).as(ExitCode.Success)
+    } yield result
+  }
+
+  def reopen(args: Cli.Args): IO[ExitCode] = {
+    val id = args.requirePositional(0, "id")
+    val updates = Map(
+      "status"       -> "open",
+      "last_updated" -> LocalDate.now().toString
+    )
+    for {
+      file <- issuesFile
+      found <- Tsv.modifyWith(file) { tbl =>
+                 val isPresent = tbl.rows.exists(_.getOrElse("id", "") == id)
+                 if (!isPresent) (tbl, false)
+                 else (tbl.updateRow(_.getOrElse("id", "") == id, updates), true)
+               }
+      result <- if (!found) IO(Term.err(s"Not found: $id")).as(ExitCode.Error)
+                else IO(Term.ok(s"Reopened: $id")).as(ExitCode.Success)
     } yield result
   }
 

@@ -19,17 +19,25 @@ object DbCmd {
       case "issues" :: rest    => IssuesDb.run(rest)
       case "audit" :: rest     => AuditDb.run(rest)
       case "merge" :: rest     => Merge.run(rest)
-      case other :: _          =>
-        IO(Term.err(s"Unknown db subcommand: $other")).as(ExitCode.Error)
+      case tableName :: rest   =>
+        // Try custom tables defined in .rescale/databases.yaml
+        CustomDb.tryRun(tableName, rest).flatMap {
+          case Some(code) => IO.pure(code)
+          case None       =>
+            IO(Term.err(s"Unknown db subcommand: $tableName")).as(ExitCode.Error)
+        }
     }
 
   private val usage: String =
     """Usage: re-scale db <command>
       |
-      |Commands:
+      |Built-in tables:
       |  migration <list|get|set|stats>
       |  issues    <list|add|resolve|stats>
       |  audit     <list|get|set|stats>
-      |  merge     --target T --source S [--strategy renumber|prefer-left|prefer-right|stricter]
+      |  merge     --target T --source S [--strategy ...]
+      |
+      |Custom tables (from .rescale/databases.yaml):
+      |  <table> <list|get|set|add|delete|stats> [--key K] [--COL V ...]
       |""".stripMargin
 }

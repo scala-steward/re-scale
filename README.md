@@ -3,10 +3,18 @@
 [![CI](https://github.com/kubuszok/re-scale/actions/workflows/ci.yml/badge.svg)](https://github.com/kubuszok/re-scale/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-A **project-agnostic Scala Native CLI** that gives any codebase the same
-disciplined developer workflow without dragging in project-specific
-behavior. Replaces three flavor-divergent dev-CLIs (`ssg-dev`, `sge-dev`,
-and a worktree variant) with one installable, tested, memory-bounded
+> **rescale**
+> _verb_
+>
+> 1. To alter the scale of a drawing or project; to change the physical proportions.
+> 2. To change the scope of a business or project to meet a change in demands.
+> 3. Establish on a new scale.
+
+**re-scale** is an utility created to make it easier to port useful libraries
+to Scala using Claude Code via a **project-agnostic Scala Native CLI**.
+
+It gives any codebase the same disciplined developer workflow without dragging
+in project-specific behavior. One installable, tested, memory-bounded
 binary that learns project specifics from `.rescale/*.yaml` config
 files instead of hard-coding them.
 
@@ -341,19 +349,77 @@ the rewrite. The current re-scale binary peaks at ~150 MiB.
 
 ## Install
 
+### Option 1: Plugin install (recommended)
+
+re-scale is a **Claude Code plugin marketplace**. One command installs
+the CLI binary, all 11 skills, and the PreToolUse hook:
+
+```
+/plugin marketplace add https://github.com/kubuszok/re-scale
+/plugin install re-scale@kubuszok-tools
+```
+
+On the first session after install, the plugin's `SessionStart` hook
+automatically:
+
+1. Clones the re-scale repo to `~/.local/share/re-scale` (or
+   `$RESCALE_HOME` if set)
+2. Runs `sbt install` to build the Scala Native binary (~30 s first
+   time)
+3. Adds `re-scale/bin/` to `PATH` for the session
+
+The `PreToolUse` hook delegates to `re-scale hook` — no manual
+`.claude/hooks/pre-tool-use.sh` setup needed.
+
+To update after a re-scale release:
+```
+/plugin marketplace update kubuszok-tools
+```
+
+### Option 2: Manual clone
+
+If you prefer manual control:
+
 ```bash
 git clone https://github.com/kubuszok/re-scale.git
 cd re-scale
-./scripts/install.sh         # builds + installs to $HOME/bin/re-scale
+sbt install                    # builds .build/re-scale-bin
+export PATH="$PWD/bin:$PATH"   # add to shell rc
 ```
 
-The installer:
+The `bin/re-scale` wrapper auto-compiles on first run if the binary
+is missing. No separate install script needed.
 
-1. Runs `sbt stage` to produce a Scala Native binary
-2. Copies the binary + wrapper into `$HOME/bin/`
-3. Verifies `$HOME/bin` is on `$PATH` (warns if not)
+### Prerequisites
 
-After install, `re-scale --help` from any directory.
+Both options require:
+
+- **JDK 22+** (sbt + Scala Native compilation)
+- **sbt** (build tool)
+- **Clang / LLVM** (Scala Native linker)
+
+#### Included skills
+
+| Skill | Auto-loads when... |
+|-------|---------------------|
+| `guide-conversion` | converting a file from Java/Dart/Ruby to Scala |
+| `guide-code-style` | formatting or style questions arise |
+| `guide-nullable` | null-safety / `Nullable[A]` patterns needed |
+| `guide-control-flow` | replacing return/break/continue |
+| `guide-verification` | post-conversion verification |
+| `audit-file` | auditing a file against its source |
+| `verify-file` | verifying a ported file |
+| `find-issues` | scanning for code quality issues |
+| `check-progress` | checking migration/audit progress |
+| `audit-status` | audit status per-package or overall |
+| `gap-fix` | fixing enforcement failures in a file |
+
+Skills reference `re-scale` commands, so the binary must be installed
+first (see above).
+
+**Project-specific skills** (like type-mappings for a specific library
+or build architecture details) should stay in the project's own
+`.claude/skills/` directory — they don't belong in the marketplace.
 
 ## Configure
 
@@ -418,6 +484,7 @@ src/main/scala/rescale/
   proc/                      # ProcCmd (process discovery + filtering)
   doctor/                    # Doctor engine + DoctorCmd
   runner/                    # Runner engine + RunnerCmd
+  metals/                    # MetalsCmd (LSP server lifecycle)
 ```
 
 Built on:
@@ -435,14 +502,14 @@ Built on:
 | Suite                              | Tests | Notes |
 |------------------------------------|------:|-------|
 | `rescale.common.*`                 |    34 | Cli, FileOps, Paths, Tsv, PathsModules |
-| `rescale.hook.*`                   |    93 | BashParser, RuleEvaluator, DefaultRules, HookCmd, RuleConfig |
+| `rescale.hook.*`                   |    98 | BashParser, RuleEvaluator, DefaultRules, HookCmd, RuleConfig |
 | `rescale.db.*`                     |    23 | DbCmd, Merge, IssuesDbConcurrency |
-| `rescale.enforce.*`                |    37 | Covenant, Shortcuts, Methods, StaleStubs, SkipPolicy + Ssg944 acceptance gate |
-| `rescale.proc.*`                   |     8 | ProcCmd parsers (parsePsOutput, classifyCommand, parseKindFilter) |
+| `rescale.enforce.*`                |    44 | Covenant, CovenantApply, Shortcuts, Methods, StaleStubs, SkipPolicy + Ssg944 gate |
+| `rescale.proc.*`                   |     8 | ProcCmd parsers |
 | `rescale.doctor.*`                 |    12 | DoctorConfig schema + Doctor engine |
-| `rescale.runner.*`                 |     9 | RunnersConfig schema + Runner engine |
+| `rescale.runner.*`                 |    10 | RunnersConfig schema + Runner engine + 100k-line streaming regression |
 | `rescale` (Version, Memory bound)  |     5 | sanity + memory acceptance |
-| **Total**                          | **245** | **0 failed** |
+| **Total**                          | **274** | **0 failed** |
 
 ## License
 

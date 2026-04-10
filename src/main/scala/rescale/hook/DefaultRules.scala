@@ -101,6 +101,17 @@ object DefaultRules {
       ),
 
       // ============================================================
+      // adb — Android Debug Bridge. Deny by default because adb
+      // commands can flash firmware, wipe user data, install APKs,
+      // and shell into a device. Originally from sge-dev's RuleEngine.
+      // Projects that need adb can allow it via .rescale/claude-hooks.yaml.
+      // ============================================================
+      RuleEntry(
+        when   = C.ProgramIn(List("adb", "fastboot")),
+        action = Some(Decision.Deny("adb/fastboot commands require explicit opt-in via .rescale/claude-hooks.yaml"))
+      ),
+
+      // ============================================================
       // System-directory write protection — every flavor's RuleEngine
       // had this. Refuses redirects to /etc/, /usr/, /System/, or
       // /Library/ regardless of which command is doing the writing.

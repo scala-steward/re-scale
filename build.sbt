@@ -64,6 +64,7 @@ lazy val root = project
     ),
     testFrameworks += new TestFramework("munit.Framework"),
     // `sbt stage` copies the linked binary + wrapper into target/stage/bin/
+    // (used by CI and memory-bound tests that spawn a subprocess)
     TaskKey[File]("stage") := {
       val linked   = (Compile / nativeLink).value
       val stageDir = target.value / "stage" / "bin"
@@ -71,9 +72,23 @@ lazy val root = project
       val binDest     = stageDir / "re-scale-bin"
       val wrapperDest = stageDir / "re-scale"
       IO.copyFile(linked, binDest)
-      IO.copyFile(baseDirectory.value / "bin" / "re-scale.sh", wrapperDest)
+      IO.copyFile(baseDirectory.value / "bin" / "re-scale", wrapperDest)
       binDest.setExecutable(true)
       wrapperDest.setExecutable(true)
       stageDir
+    },
+    // `sbt install` builds the native binary and copies it to .build/
+    // which survives `sbt clean`. The bin/re-scale wrapper finds it
+    // there at runtime. This is the primary way to get a working
+    // re-scale binary — no separate install.sh needed.
+    TaskKey[File]("install") := {
+      val linked   = (Compile / nativeLink).value
+      val buildDir = baseDirectory.value / ".build"
+      IO.createDirectory(buildDir)
+      val dest = buildDir / "re-scale-bin"
+      IO.copyFile(linked, dest)
+      dest.setExecutable(true)
+      streams.value.log.info(s"Installed re-scale-bin to $dest")
+      dest
     }
   )

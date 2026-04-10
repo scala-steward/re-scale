@@ -252,4 +252,43 @@ final class BashParserSpec extends FunSuite {
     assert(s.args.contains("foo: bar"))
     assert(s.args.contains("multi line body"))
   }
+
+  // -- Newline handling (regression: 48 GB infinite loop) ---------------
+
+  test("multiline: bare newlines between commands") {
+    val expr = BashParser.parse("echo hello\necho world")
+    val cmds = BashParser.allCommands(expr)
+    assert(cmds.size >= 2, s"expected 2+ commands, got ${cmds.size}: $cmds")
+    assertEquals(cmds.head.program, "echo")
+  }
+
+  test("multiline: python3 -c with embedded newlines in quotes") {
+    val input = "python3 -c \"for i in range(10):\n    print(i)\n\""
+    val s = parseSimple(input)
+    assertEquals(s.program, "python3")
+    assert(s.args.contains("-c"))
+  }
+
+  test("multiline: many blank lines don't hang") {
+    val input = "echo start\n\n\n\n\n\n\n\necho end"
+    val expr = BashParser.parse(input)
+    val cmds = BashParser.allCommands(expr)
+    assert(cmds.nonEmpty, "should parse without hanging")
+  }
+
+  test("multiline: trailing newline") {
+    val input = "scala-cli /tmp/gen.scala\n"
+    val s = parseSimple(input)
+    assertEquals(s.program, "scala-cli")
+    assertEquals(s.args, List("/tmp/gen.scala"))
+  }
+
+  test("multiline: command && newline && command") {
+    val input = "git add foo.scala &&\ngit commit -m 'msg'"
+    val expr = BashParser.parse(input)
+    val cmds = BashParser.allCommands(expr)
+    assertEquals(cmds.size, 2)
+    assertEquals(cmds(0).program, "git")
+    assertEquals(cmds(1).program, "git")
+  }
 }

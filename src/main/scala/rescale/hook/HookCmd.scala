@@ -78,28 +78,77 @@ object HookCmd {
     * decision pipeline without spawning subprocesses.
     */
   def process(input: String, rules: RuleSet): String = {
-    val command = extractBashCommand(input)
-    command match {
-      case None =>
-        // Not a Bash tool call, or input is malformed — let the harness allow.
+    // Check non-Bash tools for .rescale/data access first.
+    val toolName = extractStringField(input, "tool_name")
+    toolName match {
+      case Some("Read") | Some("Edit") | Some("Write") =>
+        val filePath = extractStringField(input, "file_path")
+        filePath match {
+          case Some(p) if p.contains(".rescale/data/") =>
+            return responseJson("deny",
+              s"Direct access to .rescale/data/ denied — use 're-scale db' commands instead. " +
+              "This ensures atomic writes, file locking, and consistent TSV formatting."
+            )
+          case _ => // fall through to allow
+        }
         responseJson("allow", "")
-      case Some(cmd) if cmd.trim.isEmpty =>
-        responseJson("allow", "")
-      case Some(cmd) =>
-        val expr     = BashParser.parse(cmd)
-        val decision = RuleEvaluator.evaluate(expr, rules)
-        renderDecision(decision)
+      case _ =>
+        // Bash tool or unknown — run through the rule engine.
+        val command = extractBashCommand(input)
+        command match {
+          case None =>
+            responseJson("allow", "")
+          case Some(cmd) if cmd.trim.isEmpty =>
+            responseJson("allow", "")
+          case Some(cmd) =>
+            val expr     = BashParser.parse(cmd)
+            val decision = RuleEvaluator.evaluate(expr, rules)
+            renderDecision(decision)
+        }
     }
   }
 
-  /** Minimal-effort JSON extraction. We don't pull in a JSON parser
-    * for this — the only field we care about is
-    * `tool_input.command`, which the Claude Code hook contract
-    * guarantees is a top-level string. A full JSON parser is overkill
-    * and would add a Scala Native dependency for one field lookup.
-    *
-    * Looks for `"command"\s*:\s*"..."` and unescapes the standard
-    * JSON string escapes. Returns None if no command field is found.
+  /** Extract a JSON string field by key name. Generic version of
+    * [[extractBashCommand]] — scans for `"<key>"\s*:\s*"..."` and
+    * unescapes standard JSON string escapes. Returns None if not found.
+    */
+  private[hook] def extractStringField(input: String, fieldName: String): Option[String] = {
+    if (input.isEmpty) return None
+    val key = s""""$fieldName""""
+    if (!input.contains(key)) return None
+    var i = input.indexOf(key)
+    while (i >= 0) {
+      var j = i + key.length
+      while (j < input.length && (input(j) == ' ' || input(j) == '\t' || input(j) == ':')) j += 1
+      if (j < input.length && input(j) == '"') {
+        j += 1
+        val sb = new StringBuilder
+        var done = false
+        while (j < input.length && !done) {
+          input(j) match {
+            case '\\' if j + 1 < input.length =>
+              input(j + 1) match {
+                case 'n'  => sb.append('\n'); j += 2
+                case 't'  => sb.append('\t'); j += 2
+                case 'r'  => sb.append('\r'); j += 2
+                case '"'  => sb.append('"');  j += 2
+                case '\\' => sb.append('\\'); j += 2
+                case '/'  => sb.append('/');  j += 2
+                case c    => sb.append(c);    j += 2
+              }
+            case '"' => done = true
+            case c   => sb.append(c); j += 1
+          }
+        }
+        if (done) return Some(sb.toString)
+      }
+      i = input.indexOf(key, i + 1)
+    }
+    None
+  }
+
+  /** Minimal-effort JSON extraction. Delegates to [[extractStringField]]
+    * for the `command` key.
     */
   private[hook] def extractBashCommand(input: String): Option[String] = {
     if (input.isEmpty) return None
