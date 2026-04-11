@@ -26,6 +26,27 @@ import rescale.hook.Rule.Condition as C
 
 object DefaultRules {
 
+  /** Common git flags that change the target repo but don't affect
+    * which subcommand is being run. Wrapping git rules in
+    * `Ignoring(gitIgnoreFlags, ...)` lets `git -C /repo status` match
+    * the same rules as `git status`.
+    */
+  private val gitIgnoreFlags: List[(String, Int)] = List(
+    ("-C", 1),        // -C <path>: run as if started in <path>
+    ("--git-dir", 1), // --git-dir <path>: set .git directory
+    ("-c", 1),        // -c <key=value>: set config for this invocation
+    ("--work-tree", 1),
+    ("--namespace", 1),
+    ("--no-replace-objects", 0),
+    ("--bare", 0),
+    ("--no-optional-locks", 0)
+  )
+
+  /** Wrap a condition in Ignoring(gitIgnoreFlags, ...) so that git
+    * flags like `-C <path>` are stripped before matching subcommands.
+    */
+  private def gitIgnoring(cond: C): C = C.Ignoring(gitIgnoreFlags, cond)
+
   /** The canonical re-scale rule set. The first matching rule wins. */
   val ruleSet: RuleSet = RuleSet(
     List(
@@ -224,7 +245,7 @@ object DefaultRules {
       // Git granular rules (single composite RuleEntry per category)
       // ============================================================
       RuleEntry(
-        when = C.And(List(
+        when = gitIgnoring(C.And(List(
           C.ProgramIn(List("git")),
           C.Or(List(
             C.StartsWith(List("git", "status")),
@@ -250,11 +271,11 @@ object DefaultRules {
               C.HasAny(List("--get", "--get-all", "--get-regexp", "--list", "-l", "-e", "--edit"))
             ))
           ))
-        )),
+        ))),
         action = Some(Decision.Allow)
       ),
       RuleEntry(
-        when = C.And(List(
+        when = gitIgnoring(C.And(List(
           C.ProgramIn(List("git")),
           C.Or(List(
             C.StartsWith(List("git", "reset")),
@@ -262,48 +283,48 @@ object DefaultRules {
             C.StartsWith(List("git", "clean")),
             C.StartsWith(List("git", "rebase"))
           ))
-        )),
+        ))),
         action = Some(Decision.Deny("git reset/restore/clean/rebase rewrites or destroys local state"))
       ),
       RuleEntry(
-        when = C.And(List(
+        when = gitIgnoring(C.And(List(
           C.StartsWith(List("git", "commit")),
           C.HasAny(List("--amend"))
-        )),
+        ))),
         action = Some(Decision.Deny("git commit --amend overwrites the previous commit — create a new commit instead"))
       ),
       RuleEntry(
-        when = C.And(List(
+        when = gitIgnoring(C.And(List(
           C.StartsWith(List("git", "push")),
           C.HasAny(List("--force", "-f", "--force-with-lease"))
-        )),
+        ))),
         action = Some(Decision.Deny("Force push overwrites remote history"))
       ),
       RuleEntry(
-        when = C.And(List(
+        when = gitIgnoring(C.And(List(
           C.StartsWith(List("git", "branch")),
           C.HasAny(List("-d", "-D", "--delete", "-m", "-M", "--move"))
-        )),
+        ))),
         action = Some(Decision.Deny("git branch delete/rename overwrites data"))
       ),
       // git config writes overwrite settings — only allow read-only forms.
       // Backported from sge's RuleEngine.
       RuleEntry(
-        when = C.And(List(
+        when = gitIgnoring(C.And(List(
           C.StartsWith(List("git", "config")),
           C.Not(C.HasAny(List("--get", "--get-all", "--get-regexp", "--list", "-l", "-e", "--edit")))
-        )),
+        ))),
         action = Some(Decision.Deny("git config overwrites settings — read with --get/--list only"))
       ),
       RuleEntry(
-        when = C.And(List(
+        when = gitIgnoring(C.And(List(
           C.StartsWith(List("git", "tag")),
           C.HasAny(List("-d", "--delete", "-f", "--force"))
-        )),
+        ))),
         action = Some(Decision.Deny("git tag delete/force overwrites data"))
       ),
       RuleEntry(
-        when = C.And(List(
+        when = gitIgnoring(C.And(List(
           C.ProgramIn(List("git")),
           C.Or(List(
             C.StartsWith(List("git", "add")),
@@ -319,7 +340,7 @@ object DefaultRules {
             C.StartsWith(List("git", "tag")),
             C.StartsWith(List("git", "push"))
           ))
-        )),
+        ))),
         action = Some(Decision.Allow)
       ),
       RuleEntry(

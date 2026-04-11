@@ -75,6 +75,15 @@ object RuleConfig {
     * should be non-empty per node. The decoder picks the first
     * non-empty in declaration order.
     */
+  /** YAML sub-model for the `ignoring` condition. Each entry in
+    * `flags` is `[flag, arity]` — flag name and how many subsequent
+    * args it consumes (0 for bare flags, 1 for `-C <path>`).
+    */
+  final case class YamlIgnoring(
+    flags: List[List[String]],
+    `when`: YamlCondition
+  ) derives KindlingsYamlCodec
+
   final case class YamlCondition(
     `starts-with`:                Option[List[String]] = None,
     `has-any`:                    Option[List[String]] = None,
@@ -88,7 +97,8 @@ object RuleConfig {
     `or`:                         Option[List[YamlCondition]] = None,
     `not`:                        Option[YamlCondition]       = None,
     `followed-by`:                Option[YamlCondition]       = None,
-    `preceded-by`:                Option[YamlCondition]       = None
+    `preceded-by`:                Option[YamlCondition]       = None,
+    `ignoring`:                   Option[YamlIgnoring]        = None
   ) derives KindlingsYamlCodec
 
   // -- Public API ---------------------------------------------------
@@ -180,7 +190,20 @@ object RuleConfig {
       "or"                         -> y.`or`.map(cs => sequence(cs.map(toCondition)).map(C.Or(_))),
       "not"                        -> y.`not`.map(c => toCondition(c).map(C.Not(_))),
       "followed-by"                -> y.`followed-by`.map(c => toCondition(c).map(C.FollowedBy(_))),
-      "preceded-by"                -> y.`preceded-by`.map(c => toCondition(c).map(C.PrecededBy(_)))
+      "preceded-by"                -> y.`preceded-by`.map(c => toCondition(c).map(C.PrecededBy(_))),
+      "ignoring"                   -> y.`ignoring`.map { ig =>
+        val flags = ig.flags.map {
+          case flag :: arity :: Nil =>
+            arity.toIntOption match {
+              case Some(n) => Right((flag, n))
+              case None    => Left(s"ignoring: arity must be an integer, got '$arity'")
+            }
+          case other => Left(s"ignoring: each flag entry must be [flag, arity], got $other")
+        }
+        val (errs, oks) = flags.partitionMap(identity)
+        if (errs.nonEmpty) Left(errs.mkString("; "))
+        else toCondition(ig.`when`).map(inner => C.Ignoring(oks, inner))
+      }
     ).collect { case (name, Some(result)) => (name, result) }
 
     branches match {
