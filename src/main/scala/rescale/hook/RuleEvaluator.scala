@@ -118,7 +118,33 @@ object RuleEvaluator {
       case Condition.PrecededBy(prev) =>
         if (idx == 0) false
         else matches(prev, pipeline(idx - 1), pipeline, idx - 1)
+      case Condition.Ignoring(flags, inner) =>
+        val filtered = stripFlags(cmd, flags)
+        matches(inner, filtered, pipeline, idx)
     }
+  }
+
+  /** Strip flag+arity patterns from a command's args.
+    *
+    * For each `(flag, arity)`, when `flag` appears in the args list,
+    * remove it AND the next `arity` args. For example, `("-C", 1)` on
+    * `["-C", "/repo", "status"]` produces `["status"]`.
+    */
+  private def stripFlags(cmd: BashExpr.Simple, flags: List[(String, Int)]): BashExpr.Simple = {
+    val flagMap = flags.toMap
+    val result = scala.collection.mutable.ListBuffer.empty[String]
+    var i = 0
+    val args = cmd.args
+    while (i < args.length) {
+      flagMap.get(args(i)) match {
+        case Some(arity) =>
+          i += 1 + arity // skip the flag + its arguments
+        case None =>
+          result += args(i)
+          i += 1
+      }
+    }
+    BashExpr.Simple(cmd.program, result.toList, cmd.redirects)
   }
 
   /** Check that program + args start with the given prefix list. */

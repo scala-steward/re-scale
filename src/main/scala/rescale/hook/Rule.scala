@@ -145,6 +145,16 @@ object Rule {
       * `program in {x, y, z}` case.
       */
     case ProgramIn(programs: List[String])
+
+    /** Strip specified flag+arity patterns from the command args before
+      * evaluating the inner condition. Used to match commands like
+      * `git -C /path status` as if they were `git status`.
+      *
+      * Each entry in `flags` is `(flag, arity)` where arity is how many
+      * subsequent args the flag consumes (0 for bare flags like `--verbose`,
+      * 1 for flags with a value like `-C /path`).
+      */
+    case Ignoring(flags: List[(String, Int)], inner: Condition)
   }
 
   /** A single rule. Either has a leaf `action` (the simple form) or a
