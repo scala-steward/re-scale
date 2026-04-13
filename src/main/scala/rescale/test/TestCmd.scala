@@ -63,7 +63,8 @@ object TestCmd {
       cmds = for {
         m      <- modules
         suffix <- List("", "JS", "Native")
-      } yield s"$m$suffix/compile"
+        scope  <- List("compile", "Test/compile")
+      } yield s"$m$suffix/$scope"
       result <- runSequential(root, cmds)
     } yield result
   }
