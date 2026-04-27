@@ -22,7 +22,17 @@ Find code quality issues in the project.
    re-scale db issues list --status open
    ```
 
-4. Summarize findings by severity and suggest fixes.
+4. Check for metadata gaps — files missing upstream commit tracking:
+   ```
+   re-scale fileinfo --given . --when "covenant=full-port && upstream-commit=" --then "select source-reference" --machine-readable
+   ```
+
+5. Check DB sync — migration.tsv out of date with file headers:
+   ```
+   re-scale fileinfo --given . --then "sync-check"
+   ```
+
+6. Summarize findings by severity and suggest fixes.
 
 ## Important
 

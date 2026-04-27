@@ -42,6 +42,11 @@ Convert the original source file at `$ARGUMENTS` to idiomatic Scala 3.
    Follow the format described in `/re-scale:audit-file`. Set `Audited:` to
    today's date.
 
+9. **Stamp file metadata**: Set the file's header properties for tracking:
+   ```
+   re-scale fileinfo --given <path> --then "set original-src=<source_path>,status=ai_converted,authors=<authors>"
+   ```
+
 ## Important
 
 **Do NOT use shell commands directly.** Use `re-scale` commands and dedicated
