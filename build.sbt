@@ -19,7 +19,7 @@ import scala.scalanative.build.*
 
 ThisBuild / scalaVersion := "3.8.3"
 ThisBuild / organization := "com.kubuszok"
-ThisBuild / version      := "0.1.3"
+ThisBuild / version      := "0.1.4"
 
 ThisBuild / scalacOptions ++= Seq(
   "-deprecation",
