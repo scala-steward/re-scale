@@ -10,6 +10,8 @@ set -euo pipefail
 # the bin/ directory onto PATH for this session.
 # ─────────────────────────────────────────────────────────────
 
+RESCALE_VERSION="0.1.4"
+
 # Already available?
 if command -v re-scale >/dev/null 2>&1; then
   exit 0
@@ -17,12 +19,12 @@ fi
 
 # Where to find / put the re-scale source tree.
 # Users can override with RESCALE_HOME env var.
-RESCALE_HOME="${RESCALE_HOME:-$HOME/.local/share/re-scale}"
+RESCALE_HOME="${RESCALE_HOME:-$HOME/.local/share/re-scale/$RESCALE_VERSION}"
 
 # Clone if needed
 if [ ! -f "$RESCALE_HOME/build.sbt" ]; then
-  echo "[re-scale] First-time setup: cloning re-scale..." >&2
-  git clone --depth 1 https://github.com/kubuszok/re-scale.git "$RESCALE_HOME" >&2 2>&1 || {
+  echo "[re-scale] First-time setup: cloning re-scale $RESCALE_VERSION..." >&2
+  git clone --depth 1 --branch "$RESCALE_VERSION" https://github.com/kubuszok/re-scale.git "$RESCALE_HOME" >&2 2>&1 || {
     echo "[re-scale] WARNING: git clone failed — re-scale CLI will not be available." >&2
     exit 0
   }
