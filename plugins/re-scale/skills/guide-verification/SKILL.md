@@ -13,5 +13,7 @@ Run these checks after every conversion, in order (cheapest first):
 5. **Stale stubs**: `re-scale enforce stale-stubs --src <dir>`
 6. **Covenant verify**: `re-scale enforce verify --file <path>`
 7. **Stamp**: `re-scale enforce covenant-apply --file <path> --source <ref> [--spec-pass N]`
+8. **Track upstream commit**: `re-scale fileinfo --given <path> --then "track-commit"`
+9. **DB sync check**: `re-scale fileinfo --given <dir> --then "sync-check"` (verifies migration.tsv matches file headers)
 
 See `docs/contributing/verification-checklist.md` for full details.

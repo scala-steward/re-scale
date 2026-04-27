@@ -15,6 +15,20 @@ description: Code style rules for Scala 3 porting projects — headers, formatti
 - **Preserve all original comments** from the source
 - **Fix bugs, don't work around them**: when a test reveals a pre-existing bug, fix it
 
+## File header metadata
+
+After porting, stamp the file's header with tracking properties:
+```
+re-scale fileinfo --given <path> --then "set original-src=<source>,authors=<names>,status=ported"
+```
+
+Query a file's properties without reading the full file:
+```
+re-scale fileinfo --given <path> --then "select *"
+```
+
+See `/file-metadata` for the full query/filter/batch-update API.
+
 ## Formatting
 
 Scalafmt config is `.scalafmt.conf` at project root. Run:

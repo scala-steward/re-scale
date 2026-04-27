@@ -28,12 +28,23 @@ Show migration progress for this project.
    ```
    Count total hits and files affected.
 
-5. Report:
+5. Check file header metadata coverage:
+   ```
+   re-scale fileinfo --given . --when "covenant=full-port" --then "select covenant" --machine-readable
+   ```
+   Count the lines to get total covenanted files. Also check for files
+   missing upstream commit tracking:
+   ```
+   re-scale fileinfo --given . --when "covenant=full-port && upstream-commit=" --then "select source-reference" --machine-readable
+   ```
+
+6. Report:
    - Migration: X files converted out of Y total
    - Audit: X pass, Y minor, Z major
    - Covenanted: N files with covenant headers, M verified passing
    - Shortcuts: N files still have hits (gap-fix candidates)
+   - Upstream tracking: N covenanted files missing upstream-commit
 
 ## Important
 
-**Do NOT access .rescale/data/ files directly.** Use `re-scale db` commands.
+**Do NOT access .rescale/data/ files directly.** Use `re-scale db` commands for DB operations, `re-scale fileinfo` for file header queries.

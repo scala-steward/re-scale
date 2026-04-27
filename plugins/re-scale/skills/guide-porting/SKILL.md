@@ -81,6 +81,7 @@ re-scale db audit stats                    # Overall audit summary
 - `/guide-control-flow` — boundary/break patterns
 - `/guide-code-style` — License headers, formatting
 - `/guide-verification` — Post-conversion verification checklist
+- `/file-metadata` — Query/update file header properties, track upstream commits
 - `/audit-file` — Audit a single file
 - `/audit-package` — Audit all files in a package
 - `/correct-package` — Fix all issues in a package

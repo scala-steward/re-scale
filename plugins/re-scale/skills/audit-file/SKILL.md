@@ -6,13 +6,19 @@ Audit the file at `$ARGUMENTS` against its original source.
 
 ## Procedure
 
-1. Read the Scala file with the Read tool.
+1. Read the file's header properties (without opening the full file):
+   ```
+   re-scale fileinfo --given <path> --then "select *"
+   ```
+   This shows covenant status, source-reference, authors, upstream-commit, etc.
 
-2. Identify the original source file:
-   - Check the license header for `Covenant-source-reference:` or a `Migration notes:` block
+2. Identify the original source file from the properties:
+   - `source-reference` or `java-reference` — Covenant source path
+   - `original-src` — plain source path
    - Or look in the `original-src/` submodule using the project's type-mapping convention
 
-3. Read the original source file from the local submodule (**never fetch from GitHub**).
+3. Read both files: the Scala file with the Read tool, the original from the
+   local submodule (**never fetch from GitHub**).
 
 4. Run enforcement checks:
    ```

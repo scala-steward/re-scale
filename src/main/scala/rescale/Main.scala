@@ -41,6 +41,8 @@ object Main extends IOApp {
         rescale.runner.RunnerCmd.run(rest)
       case "metals" :: rest =>
         rescale.metals.MetalsCmd.run(rest)
+      case "fileinfo" :: rest =>
+        rescale.fileinfo.FileInfoCmd.run(rest)
       case unknown :: _ =>
         IO.println(s"re-scale: unknown command '$unknown'")
           .flatMap(_ => IO.println(usage))
@@ -63,6 +65,7 @@ object Main extends IOApp {
        |  doctor      Project dev-env bootstrap (.rescale/doctor.yaml)
        |  runner      Generic test-runner adapter (.rescale/runners.yaml)
        |  metals      Metals LSP server lifecycle (install/start/stop/status)
+       |  fileinfo    Query, filter, and batch-update file header metadata
        |  version     Print version
        |
        |Options:

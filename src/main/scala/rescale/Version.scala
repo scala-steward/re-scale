@@ -9,5 +9,5 @@ package rescale
   * Cats Effect machinery.
   */
 object Version {
-  val value: String = "0.1.3"
+  val value: String = "0.1.4"
 }
