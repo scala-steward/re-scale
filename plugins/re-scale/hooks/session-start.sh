@@ -10,16 +10,20 @@ set -euo pipefail
 # the bin/ directory onto PATH for this session.
 # ─────────────────────────────────────────────────────────────
 
-RESCALE_VERSION="0.1.4"
-
-# Already available?
-if command -v re-scale >/dev/null 2>&1; then
-  exit 0
-fi
+RESCALE_VERSION="0.1.5"
 
 # Where to find / put the re-scale source tree.
 # Users can override with RESCALE_HOME env var.
 RESCALE_HOME="${RESCALE_HOME:-$HOME/.local/share/re-scale/$RESCALE_VERSION}"
+
+# Already available at the right version?
+if command -v re-scale >/dev/null 2>&1; then
+  FOUND_VERSION=$(re-scale --version 2>/dev/null | awk '{print $2}' || true)
+  if [ "$FOUND_VERSION" = "$RESCALE_VERSION" ]; then
+    exit 0
+  fi
+  # Wrong version on PATH — fall through to prepend the correct one
+fi
 
 # Clone if needed
 if [ ! -f "$RESCALE_HOME/build.sbt" ]; then

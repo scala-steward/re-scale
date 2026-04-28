@@ -12,6 +12,7 @@ import cats.effect.{ExitCode, IO}
 import fs2.Stream
 import fs2.io.file.Path
 import rescale.common.{Paths, Term, Tsv}
+import rescale.db.MigrationDb
 
 import java.io.File
 
@@ -68,8 +69,9 @@ object SyncCheck {
     migTable:  Tsv.Table,
     fileProps: List[(Path, FileHeader.FileProperties)]
   ): List[Mismatch] = {
-    val dbBySsgPath = migTable.rows.flatMap { row =>
-      row.get("ssg_path").filter(_.nonEmpty).map(_ -> row)
+    val dbByPortPath = migTable.rows.flatMap { row =>
+      val pp = MigrationDb.portPath(row)
+      if (pp.nonEmpty) Some(pp -> row) else None
     }.toMap
 
     val dbBySourcePath = migTable.rows.flatMap { row =>
@@ -86,11 +88,10 @@ object SyncCheck {
         else filePath.toString
       }
 
-      val originalSrc = fp.properties.get("original-src")
-        .orElse(fp.properties.get("source-reference"))
+      val originalSrc = FileHeader.sourceReference(fp.properties)
 
       originalSrc.foreach { src =>
-        val dbRow = dbBySsgPath.get(relPath).orElse(dbBySourcePath.get(src))
+        val dbRow = dbByPortPath.get(relPath).orElse(dbBySourcePath.get(src))
         dbRow match {
           case None =>
             mismatches += Mismatch(relPath, "in-file-not-in-db", "", src)
@@ -116,17 +117,15 @@ object SyncCheck {
         if (filePath.startsWith(rootPath)) rootPath.relativize(filePath).toString
         else filePath.toString
       }
-      fp.properties.get("original-src")
-        .orElse(fp.properties.get("source-reference"))
-        .map(_ => relPath)
+      FileHeader.sourceReference(fp.properties).map(_ => relPath)
     }.toSet
 
     migTable.rows.foreach { row =>
-      val ssgPath = row.getOrElse("ssg_path", "")
-      if (ssgPath.nonEmpty && !filesWithOriginalSrc.contains(ssgPath)) {
+      val pp = MigrationDb.portPath(row)
+      if (pp.nonEmpty && !filesWithOriginalSrc.contains(pp)) {
         val status = row.getOrElse("status", "")
         if (status == "ported" || status == "done") {
-          mismatches += Mismatch(ssgPath, "in-db-not-in-file", status, "")
+          mismatches += Mismatch(pp, "in-db-not-in-file", status, "")
         }
       }
     }

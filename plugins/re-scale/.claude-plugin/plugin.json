@@ -1,7 +1,7 @@
 {
   "name": "re-scale",
   "description": "Scala Native porting toolkit — enforcement gates, migration tracking, and conversion guides",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "author": {"name": "kubuszok"},
   "repository": "https://github.com/kubuszok/re-scale",
   "license": "Apache-2.0"

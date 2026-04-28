@@ -19,9 +19,12 @@ import java.time.LocalDate
 object MigrationDb {
 
   val headers: List[String] = List(
-    "source_lib", "source_path", "ssg_path", "status", "module",
+    "source_lib", "source_path", "port_path", "status", "module",
     "last_updated", "notes", "source_sync_commit", "last_sync_date"
   )
+
+  def portPath(row: Map[String, String]): String =
+    row.getOrElse("port_path", row.getOrElse("ssg_path", row.getOrElse("sge_path", "")))
 
   def run(args: List[String]): IO[ExitCode] =
     args match {
@@ -63,7 +66,7 @@ object MigrationDb {
     val updates = scala.collection.mutable.Map.empty[String, String]
     args.flag("status").foreach(s => updates("status") = s)
     args.flag("notes").foreach(n => updates("notes") = n)
-    args.flag("ssg-path").foreach(p => updates("ssg_path") = p)
+    args.flag("port-path").orElse(args.flag("ssg-path")).foreach(p => updates("port_path") = p)
     updates("last_updated") = LocalDate.now().toString
     val updatesMap = updates.toMap
 
@@ -118,7 +121,11 @@ object MigrationDb {
 
   private def printTable(table: Table): Unit = {
     if (table.rows.isEmpty) { println("(no results)"); return }
-    val display = List("source_lib", "source_path", "ssg_path", "status", "module", "notes")
+    val portCol =
+      if (table.headers.contains("port_path")) "port_path"
+      else if (table.headers.contains("sge_path")) "sge_path"
+      else "ssg_path"
+    val display = List("source_lib", "source_path", portCol, "status", "module", "notes")
     println(Term.table(display, table.rows.map(r => display.map(h => r.getOrElse(h, "")))))
   }
 
@@ -128,6 +135,6 @@ object MigrationDb {
       |Commands:
       |  list [--status S] [--lib L] [--module M] [--package P] [--limit N] [--offset N]
       |  get <source_path>
-      |  set <source_path> --status S [--notes TEXT] [--ssg-path P]
+      |  set <source_path> --status S [--notes TEXT] [--port-path P]
       |  stats     Summary counts""".stripMargin
 }
