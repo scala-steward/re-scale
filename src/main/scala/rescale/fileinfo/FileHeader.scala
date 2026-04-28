@@ -84,6 +84,11 @@ object FileHeader {
   def parse(file: File): IO[FileProperties] =
     parse(Path.fromNioPath(file.toPath))
 
+  def sourceReference(props: Map[String, String]): Option[String] =
+    props.get("original-src")
+      .orElse(props.get("source-reference"))
+      .orElse(props.collectFirst { case (k, v) if k.endsWith("-reference") => v })
+
   // -- internals ---------------------------------------------------------
 
   private final case class ParseAcc(

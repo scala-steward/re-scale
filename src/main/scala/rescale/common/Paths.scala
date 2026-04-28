@@ -106,6 +106,9 @@ object Paths {
   /** Per-project test runner adapters — read by `re-scale runner`. */
   def runnersConfig(root: File): File = new File(root, ".rescale/runners.yaml")
 
+  /** Per-project source repo mapping — read by `re-scale fileinfo track-commit`. */
+  def sourceReposConfig(root: File): File = new File(root, ".rescale/source-repos.yaml")
+
   /** Heuristically discover module names inside a project. A "module"
     * is an immediate subdirectory of the project root that contains
     * `src/main/scala`. Used by `re-scale build` / `test verify` to

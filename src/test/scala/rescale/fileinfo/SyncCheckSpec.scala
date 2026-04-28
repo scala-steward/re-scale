@@ -34,7 +34,7 @@ final class SyncCheckSpec extends CatsEffectSuite {
     dataDir.mkdirs()
     val f = new File(dataDir, "migration.tsv")
     f.deleteOnExit()
-    val headers = List("source_lib", "source_path", "ssg_path", "status",
+    val headers = List("source_lib", "source_path", "port_path", "status",
       "module", "last_updated", "notes", "source_sync_commit", "last_sync_date")
     val table = Table(headers, rows, List("# re-scale Migration Database"))
     Tsv.write(f, table).unsafeRunSync()
@@ -56,7 +56,7 @@ final class SyncCheckSpec extends CatsEffectSuite {
     )
     writeMigration(dir, List(Map(
       "source_path" -> "lib/foo.dart",
-      "ssg_path" -> "src/Foo.scala",
+      "port_path" -> "src/Foo.scala",
       "status" -> "ported",
       "source_sync_commit" -> "abc123"
     )))
@@ -81,7 +81,7 @@ final class SyncCheckSpec extends CatsEffectSuite {
     )
     writeMigration(dir, List(Map(
       "source_path" -> "lib/bar.dart",
-      "ssg_path" -> "src/Bar.scala",
+      "port_path" -> "src/Bar.scala",
       "status" -> "ported",
       "source_sync_commit" -> "old123"
     )))
