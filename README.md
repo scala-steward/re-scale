@@ -28,7 +28,7 @@ language-to-language porting work.
 The lineage:
 
 1. **`sge-dev`** was the **original**. It lived inside
-   [SGE](https://github.com/MateuszKubuszok/sge) — the **Scala Game
+   [SGE](https://github.com/kubuszok/sge) — the **Scala Game
    Engine**, a cross-platform Scala Native game engine ported from
    libgdx + custom native components, targeting six desktop and three
    Android architectures simultaneously. sge-dev started as a handful
@@ -36,7 +36,7 @@ The lineage:
    project-specific Scala.
 
 2. **`ssg-dev`** was bootstrapped FROM sge-dev when the same author
-   started [SSG](https://github.com/MateuszKubuszok/ssg) — the
+   started [SSG](https://github.com/kubuszok/ssg) — the
    **Scala Static Site Generator** — porting five upstream libraries
    to Scala Native cross-platform: `flexmark-java` (Markdown, Java),
    `liqp` (Liquid, Java), `dart-sass` (SCSS, Dart), `jekyll-minifier`
