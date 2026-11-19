@@ -20,7 +20,7 @@ val platforms = List(VirtualAxis.jvm, VirtualAxis.native)
 
 // Bumping these requires re-running the memory-bound test suite.
 val catsEffectVersion = "3.7.0"
-val fs2Version = "3.13.0"
+val fs2Version = "3.16.0"
 val catsParseVersion = "1.1.0"
 val munitVersion = "1.3.6" // 1.2.x pins Scala Native test-interface 0.5.10, below sbt-kubuszok's 0.5.12
 val munitCeVersion = "2.2.0"
